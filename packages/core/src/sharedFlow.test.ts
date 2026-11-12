@@ -459,3 +459,55 @@ describe("AI-14: request inbox", () => {
   });
 });
 
+describe("AI-15: several wallets on one device", () => {
+  it("each wallet signs with its own key; sign requests are shared on the device", async () => {
+    const m = new WalletManager(new MemoryStore(), providers);
+    await m.setupPassword(PW);
+    const v1 = await m.addWallet("V1", M[0]!), v2 = await m.addWallet("V2", M[1]!), v3 = await m.addWallet("V3", M[2]!);
+    await m.setActive(v2.id);
+    const k2 = (await m.sharedKeyInfo(0)).keyHash;
+    await m.setActive(v3.id);
+    const k3 = (await m.sharedKeyInfo(0)).keyHash;
+
+    // wallet 1 creates a 2-of-3 and proposes (signed by wallet 1)
+    await m.setActive(v1.id);
+    const ms = await m.createShared({ name: "Quỹ", required: 2, cosigners: [{ name: "V2", keyHash: k2 }, { name: "V3", keyHash: k3 }] });
+    await m.proposeShared(ms.id, DEST, 3_000_000n);
+    expect((await m.listRequests(ms.id))[0]!.iSigned).toBe(true);
+    const exported = m.exportShared(ms.id);
+
+    // wallet 2 has its own list: it adds the same multisig wallet, then sees the request as NOT signed by it
+    await m.setActive(v2.id);
+    expect(m.listShared()).toHaveLength(0);
+    const mine = await m.importShared(exported); // was "Ví này đã tồn tại"
+    expect(mine.myIndex).toBe(0);
+    expect(await m.pendingActionCount()).toBe(1);
+    const list = await m.listRequests(ms.id);
+    expect(list).toHaveLength(1); // the request created by wallet 1 is visible
+    expect(list[0]!.iSigned).toBe(false); // the bug: it said "already signed"
+    const signed = await m.signRequest(list[0]!.request, PW);
+    expect(signed.preview.signedBy).toContain(k2); // signed with wallet 2's key, not wallet 1's
+    expect(new Set(signed.preview.signedBy).size).toBe(2);
+    expect(await m.submitRequest(signed.request)).toHaveLength(64);
+
+    // removing wallet 2's copy leaves wallet 1's; removing wallet 1 drops its entries
+    await m.removeShared(ms.id);
+    expect(m.listShared()).toHaveLength(0);
+    await m.setActive(v1.id);
+    expect(m.listShared()).toHaveLength(1);
+    await m.removeWallet(v1.id);
+    await m.setActive(v3.id);
+    expect(m.listShared()).toHaveLength(0);
+  });
+
+  it("accounts of the same mnemonic share one multisig key (CIP-0146 uses account 0)", async () => {
+    const m = new WalletManager(new MemoryStore(), providers);
+    await m.setupPassword(PW);
+    const v1 = await m.addWallet("V1", M[0]!);
+    const k = (await m.sharedKeyInfo(0)).keyHash;
+    await m.addAccount(v1.id);
+    await m.setActive(v1.id, 1);
+    expect((await m.sharedKeyInfo(0)).keyHash).toBe(k);
+  });
+});
+

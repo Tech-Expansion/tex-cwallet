@@ -348,7 +348,7 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
     void rpc<{ unit: string; quantity: string }[]>({ type: "sharedBalance", id }).then((b) => setBal(b.find((x) => x.unit === "lovelace")?.quantity ?? "0")).catch(() => setBal(undefined));
   }, [id]);
   const load = useAction(reload);
-  useEffect(() => { void load.run(); }, [id, st.network]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load.run(); }, [id, st.network, st.active.walletId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const register = useAction(async () => { const h = await rpc<string>({ type: "sharedRegister", id }); showToast(t("ms2.registered"), net.explorerTxUrl + h); await reload(); });
   const act = useAction(async (password: string) => {

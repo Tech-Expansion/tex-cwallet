@@ -201,6 +201,9 @@ export class WalletManager {
     this.getMeta(id);
     this.state.wallets = this.state.wallets.filter((w) => w.id !== id);
     this.session.delete(id);
+    // Its multisig wallets go with it; requests stay while another wallet still holds the multisig wallet
+    this.state.shared = this.sharedList().filter((x) => x.ownerWalletId !== id);
+    for (const rid of Object.keys(this.state.requests ?? {})) if (!this.state.shared.some((x) => x.id === rid)) delete this.state.requests![rid];
     if (this.state.activeWalletId === id) {
       this.state.activeWalletId = this.state.wallets[0]?.id;
       this.state.activeAccount = 0;
@@ -363,11 +366,22 @@ export class WalletManager {
   private sharedList(): SharedEntry[] {
     return (this.state.shared ??= []);
   }
+  /** Id of the active wallet when it can hold multisig keys (has a mnemonic), else undefined. */
+  private multisigOwner(): string | undefined {
+    const w = this.state.wallets.find((x) => x.id === this.state.activeWalletId);
+    return w?.kind === "mnemonic" ? w.id : undefined;
+  }
+  /**
+   * Multisig wallets of the active wallet on the current network. Each wallet on this device has its own
+   * list (the same multisig wallet can be added by several of them), so signing status and signing always
+   * use the active wallet's CIP-1854 key. Sign requests are stored per multisig wallet and shared.
+   */
   listShared(): SharedEntry[] {
-    return this.sharedList().filter((w) => w.network === this.state.network);
+    const owner = this.multisigOwner();
+    return this.sharedList().filter((w) => w.network === this.state.network && w.ownerWalletId === owner);
   }
   private sharedById(id: string): SharedEntry {
-    const w = this.sharedList().find((x) => x.id === id);
+    const w = this.listShared().find((x) => x.id === id);
     if (!w) throw new WalletError("NOT_FOUND", "Không tìm thấy ví multisig");
     return w;
   }
@@ -399,7 +413,7 @@ export class WalletManager {
 
   private async persistShared(entry: SharedEntry) {
     const list = this.sharedList();
-    const i = list.findIndex((x) => x.id === entry.id);
+    const i = list.findIndex((x) => x.id === entry.id && x.ownerWalletId === entry.ownerWalletId);
     if (i >= 0) list[i] = { ...list[i]!, ...entry, signers: entry.signers.map((s) => ({ ...s, name: list[i]!.signers.find((o) => o.keyHash === s.keyHash && !/^Cosigner \d+$/.test(o.name))?.name ?? s.name })) };
     else list.push(entry);
     await this.save();
@@ -480,7 +494,7 @@ export class WalletManager {
 
   async createShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }): Promise<SharedEntry> {
     const { w, owner } = await this.buildShared(p);
-    if (this.sharedList().some((x) => x.id === w.id)) throw new SharedError("INVALID_CONFIG", "Ví này đã tồn tại");
+    if (this.listShared().some((x) => x.id === w.id)) throw new SharedError("INVALID_CONFIG", "Ví này đã tồn tại");
     const entry = { ...w, ownerWalletId: owner };
     await this.persistShared(entry);
     return entry;
@@ -530,9 +544,10 @@ export class WalletManager {
   }
 
   async removeShared(id: string) {
-    this.sharedById(id);
-    this.state.shared = this.sharedList().filter((x) => x.id !== id);
-    delete (this.state.requests ??= {})[id];
+    const w = this.sharedById(id);
+    this.state.shared = this.sharedList().filter((x) => !(x.id === id && x.ownerWalletId === w.ownerWalletId));
+    // Sign requests are shared by every wallet on this device that holds the multisig wallet
+    if (!this.sharedList().some((x) => x.id === id)) delete (this.state.requests ??= {})[id];
     await this.save();
   }
 
