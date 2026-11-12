@@ -169,15 +169,23 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
   const wallet = st.wallets.find((w) => w.id === st.active.walletId);
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
+  const [qty, setQty] = useState<Record<string, string>>({});
   const [formErr, setFormErr] = useState("");
   const [preview, setPreview] = useState<SendPreviewRpc>();
   const lovelace = amt.trim() ? parseAda(amt) : undefined;
+  const owned = data.bal?.assets ?? [];
+  const nameOf = (unit: string) => {
+    const a = owned.find((x) => x.unit === unit);
+    return a?.assetName ?? (a?.assetNameHex ? `0x${a.assetNameHex}` : shorten(unit, 8));
+  };
+  const chosen: [string, string][] = Object.entries(qty as Record<string, string>).filter(([, q]) => q.trim() !== "");
 
   const prepare = useAction(async () => {
     const p = await rpc<SendPreviewRpc>({
       type: "prepareSend",
       to: to.trim(),
-      lovelace: lovelace!.toString(),
+      ...(lovelace !== undefined && lovelace !== null ? { lovelace: lovelace.toString() } : {}),
+      assets: chosen.map(([unit, q]) => ({ unit, quantity: q.trim() })),
     });
     setPreview(p);
   });
@@ -192,7 +200,8 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
 
   const review = () => {
     if (lovelace === null) return setFormErr(t("send.badAmt"));
-    if (lovelace === undefined || lovelace < 1_000_000n) return setFormErr(t("send.minAmt"));
+    if (chosen.some(([, q]) => !/^\d+$/.test(q.trim()) || BigInt(q.trim()) <= 0n)) return setFormErr(t("send.badQty"));
+    if (!chosen.length && (lovelace === undefined || lovelace < 1_000_000n)) return setFormErr(t("send.minAmt"));
     if (!to.trim().startsWith(net.addressPrefix)) return setFormErr(t("send.badAddr", { prefix: net.addressPrefix, net: net.label }));
     setFormErr("");
     send.setError("");
@@ -204,11 +213,28 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
 
   return (
     <>
-      <Screen footer={<Button variant="primary" block onClick={review} loading={prepare.busy} disabled={!to || !amt}>{t("send.review")}</Button>}>
+      <Screen footer={<Button variant="primary" block onClick={review} loading={prepare.busy} disabled={!to || (!amt && !chosen.length)}>{t("send.review")}</Button>}>
         <TopBar title={t("send.title")} onBack={() => go("/")} right={<NetworkPill net={net} />} />
         <div className="space-y-3.5 animate-fade-up">
           <Field label={t("send.to")}><textarea className="field min-h-[76px] resize-none font-mono" aria-label={t("send.to")} placeholder={`${net.addressPrefix}…`} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
-          <Field label={t("send.amount")} hint={t("send.max")}><input className="field" inputMode="decimal" aria-label={t("send.amount")} placeholder="0.0" value={amt} onChange={(e) => setAmt(e.target.value)} /></Field>
+          <Field label={t("send.amount")} hint={chosen.length ? t("send.adaOptional") : t("send.max")}><input className="field" inputMode="decimal" aria-label={t("send.amount")} placeholder="0.0" value={amt} onChange={(e) => setAmt(e.target.value)} /></Field>
+          {owned.length > 0 && (
+            <div>
+              <SectionLabel>{t("send.tokens")}</SectionLabel>
+              <Card className="space-y-2 p-3">
+                {owned.map((a) => (
+                  <label key={a.unit} className="flex items-center gap-2" data-testid="send-token">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] text-ink">{nameOf(a.unit)}</span>
+                      <span className="block truncate font-mono text-[10.5px] text-moon-dim">{shorten(a.policyId, 8)} · {BigInt(a.quantity).toLocaleString("en-US")}</span>
+                    </span>
+                    <input className="field w-28 text-right" inputMode="numeric" aria-label={`${t("send.tokenQty")} ${nameOf(a.unit)}`} placeholder="0"
+                      value={qty[a.unit] ?? ""} onChange={(e) => setQty({ ...qty, [a.unit]: e.target.value })} />
+                  </label>
+                ))}
+              </Card>
+            </div>
+          )}
           <ErrorText error={formErr || prepare.error} />
         </div>
       </Screen>
@@ -217,6 +243,10 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
           <Card className="space-y-2 p-3" data-testid="send-preview">
             <div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("send.amountLine")} · {net.label}</div>
             <div className="text-[22px] font-semibold tabular-nums text-ink">{fmtAda(preview.lovelace)} {net.unit}</div>
+            {preview.assets.map((a) => (
+              <div key={a.unit} className="flex justify-between text-[13px] text-ink"><span className="truncate">{nameOf(a.unit)}</span><span className="tabular-nums">{BigInt(a.quantity).toLocaleString("en-US")}</span></div>
+            ))}
+            {preview.assets.length > 0 && <p className="text-[11px] text-moon-dim">{t("send.minAda")}: {fmtAda(preview.minLovelace)} {net.unit}</p>}
             <div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("send.toLine")}</div>
             <div className="break-all font-mono text-[11.5px] text-moon">{preview.to}</div>
             <div className="flex justify-between text-[12.5px] text-moon"><span>{t("send.fee")}</span><span className="tabular-nums" data-testid="send-fee">{fmtAda(preview.fee)} {net.unit}</span></div>
