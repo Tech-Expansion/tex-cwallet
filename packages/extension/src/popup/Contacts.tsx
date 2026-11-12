@@ -135,8 +135,8 @@ export interface Recipient { address: string; label?: string; handle?: string; k
  * Recipient input (AI-22): address, `$handle` (resolved on preprod and shown for confirmation) or a pick from
  * the address book. Warns when the address is not in the book (first send) and offers to save it.
  */
-export function RecipientField({ value, onChange, onResolved, prefix, own = [] }: {
-  value: string; onChange: (v: string) => void; onResolved: (r: Recipient | undefined) => void; prefix: string; own?: string[];
+export function RecipientField({ value, onChange, onResolved, prefix, own = [], label }: {
+  value: string; onChange: (v: string) => void; onResolved: (r: Recipient | undefined) => void; prefix: string; own?: string[]; label?: string;
 }) {
   const t = useT();
   const { list, reload } = useContacts();
@@ -167,9 +167,9 @@ export function RecipientField({ value, onChange, onResolved, prefix, own = [] }
 
   return (
     <div className="space-y-2">
-      <Field label={t("send.to")}>
+      <Field label={label ?? t("send.to")}>
         <div className="relative">
-          <textarea className="field min-h-[76px] resize-none pr-10 font-mono" aria-label={t("send.to")} placeholder={t("send.toPlaceholder", { prefix })} value={value} onChange={(e) => onChange(e.target.value)} data-testid="send-to" />
+          <textarea className="field min-h-[76px] resize-none pr-10 font-mono" aria-label={label ?? t("send.to")} placeholder={t("send.toPlaceholder", { prefix })} value={value} onChange={(e) => onChange(e.target.value)} data-testid="send-to" />
           <IconButton className="absolute right-1.5 top-1.5" label={t("contacts.pick")} onClick={() => setPicking(true)} data-testid="send-pick-contact"><BookUser size={15} /></IconButton>
         </div>
       </Field>

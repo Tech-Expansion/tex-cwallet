@@ -161,6 +161,16 @@ amounts are exact.
 Fees and min-UTxO always come from the live preprod protocol parameters; if they cannot be fetched, the wallet
 refuses to build the transaction.
 
+More on **Gửi** (AI-23):
+
+- **Thêm người nhận** adds up to 20 recipients in one transaction, each with its own ADA and tokens. Every output
+  is checked against min-UTxO, and the preview lists each recipient, the fee and the total.
+- **Gửi tối đa** (one recipient) spends every UTxO and sends all ADA left after the fee. Tokens you don't pick stay
+  in the wallet in one output that holds exactly their minimum ADA; there is no other change.
+- **Ghi chú** adds a CIP-20 message (metadata label 674), split into lines of at most 64 bytes without breaking a
+  character (up to 16 lines). The message is public on chain; the form says so. Before signing, the wallet checks
+  that the transaction carries exactly this message and no other metadata.
+
 ### Address book and ADA Handle
 
 **Cài đặt → Sổ địa chỉ** keeps contacts (name, preprod address, optional note). They are stored only in this

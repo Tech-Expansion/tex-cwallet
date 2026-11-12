@@ -160,6 +160,20 @@ describe("WalletApi", () => {
     await expect(api.handle({ type: "confirmSend", txHash: p.txHash, password: "sai-mat-khau" })).rejects.toMatchObject({ code: "BAD_PASSWORD" });
     expect(await api.handle({ type: "confirmSend", txHash: p.txHash, password: PW })).toHaveLength(64);
   });
+
+  it("AI-23: prepareSend nhiều người nhận + memo; gửi tối đa", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    const a = (await api.manager.deriveFor("legal winner thank year wave sausage worth useful legal winner thank yellow")).baseAddress;
+    const b = (await api.manager.deriveFor("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong")).baseAddress;
+    const p: any = await api.handle({ type: "prepareSend", outputs: [{ to: a, lovelace: "2000000" }, { to: b, lovelace: "3000000" }], memo: "chia tiền" });
+    expect(p.recipients.map((r: any) => [r.to, r.lovelace])).toEqual([[a, "2000000"], [b, "3000000"]]);
+    expect(p.memo).toEqual(["chia tiền"]);
+    expect(BigInt(p.totalLovelace)).toBe(5_000_000n + BigInt(p.fee));
+    const mx: any = await api.handle({ type: "prepareSend", to: a, max: true });
+    expect(mx).toMatchObject({ max: true, totalLovelace: "50000000", change: { lovelace: "0", assets: [] } });
+    await expect(api.handle({ type: "prepareSend", outputs: [{ to: a }, { to: b }], max: true })).rejects.toThrow(/một người nhận/);
+  });
 });
 
 describe("WalletApi – chỉ preprod", () => {

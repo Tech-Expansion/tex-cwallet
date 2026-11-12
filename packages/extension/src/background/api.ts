@@ -52,7 +52,7 @@ export type Req =
   | { type: "historyPage"; page?: number; count?: number; sharedId?: string }
   | { type: "txDetail"; hash: string; sharedId?: string }
   | { type: "historyCsv"; from: number; to: number; sharedId?: string }
-  | { type: "prepareSend"; to: string; lovelace?: string; assets?: { unit: string; quantity: string }[] }
+  | { type: "prepareSend"; to?: string; lovelace?: string; assets?: { unit: string; quantity: string }[]; outputs?: { to: string; lovelace?: string; assets?: { unit: string; quantity: string }[] }[]; max?: boolean; memo?: string }
   | { type: "confirmSend"; txHash: string; password: string }
   | { type: "exportMnemonic"; id: string; password: string }
   | { type: "sharedList" }
@@ -197,12 +197,18 @@ export class WalletApi {
         return serializeTxDetail(await m.txDetail(req.hash, req.sharedId));
       case "historyCsv":
         return m.exportHistoryCsv(Number(req.from), Number(req.to), req.sharedId);
-      case "prepareSend":
+      case "prepareSend": {
+        const out = (o: { to?: string; lovelace?: string; assets?: { unit: string; quantity: string }[] }) => ({
+          to: String(o.to ?? ""),
+          lovelace: o.lovelace === undefined || o.lovelace === "" ? undefined : toBigInt(o.lovelace),
+          assets: (o.assets ?? []).map((x) => ({ unit: x.unit, quantity: toBigInt(x.quantity) })),
+        });
         return serializeSendPreview(await m.prepareSend({
-          to: req.to,
-          lovelace: req.lovelace === undefined || req.lovelace === "" ? undefined : toBigInt(req.lovelace),
-          assets: (req.assets ?? []).map((x) => ({ unit: x.unit, quantity: toBigInt(x.quantity) })),
+          ...(Array.isArray(req.outputs) ? { outputs: req.outputs.map(out) } : out(req)),
+          max: req.max === true,
+          memo: typeof req.memo === "string" ? req.memo : undefined,
         }));
+      }
       case "confirmSend":
         return m.confirmSend(req.txHash, req.password);
       case "exportMnemonic":
