@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type DragEvent } from "react";
-import { Check, ExternalLink, FileDown, Plus, Radar, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Check, ExternalLink, FileDown, Plus, Radar, Share2, ShieldCheck, Trash2, Users } from "lucide-react";
 import { rpc, fmtAda, parseAda, shorten, type AppState, type RequestItem, type SharedInput, type SharedWalletInfo, type TxPreview } from "./rpc";
 import { useAction } from "./hooks";
 import { useT } from "./i18n";
-import { Avatar, Button, Card, CopyField, ErrorText, Field, Notice, Screen, SectionLabel, SignSheet, Spinner, TopBar, cx, showToast } from "./ui/ui";
+import { Avatar, Button, Card, CopyField, ErrorText, Field, Notice, Screen, SectionLabel, ShareSheet, SignSheet, Spinner, TopBar, cx, showToast } from "./ui/ui";
 import { NetworkPill, netOf } from "./Home";
 
 export const MESH_MULTISIG_URL = "https://multisig.meshjs.dev";
@@ -76,6 +76,7 @@ function PasteBox({ go, onReceived }: { go: (r: string) => void; onReceived?: (w
 function KeyCard() {
   const t = useT();
   const [hash, setHash] = useState("");
+  const [share, setShare] = useState(false);
   // Chỉ số khóa do ví tự chọn (khóa chưa dùng đầu tiên) — người dùng không cần biết.
   useEffect(() => { void rpc<{ keyHash: string }>({ type: "sharedNext" }).then((k) => setHash(k.keyHash)).catch(() => setHash("")); }, []);
   return (
@@ -83,6 +84,8 @@ function KeyCard() {
       <SectionLabel className="mb-0">{t("ms2.mykey")}</SectionLabel>
       <p className="text-[11.5px] text-moon-dim">{t("ms2.mykeyHint")}</p>
       <CopyField value={hash} testId="ms-keyhash" />
+      <Button block disabled={!hash} onClick={() => setShare(true)} data-testid="ms-share-key"><Share2 size={15} /> {t("ms2.shareKey")}</Button>
+      {share && <ShareSheet title={t("ms2.shareKey")} value={hash} filename="multisig-key.txt" onClose={() => setShare(false)} />}
     </Card>
   );
 }
@@ -218,6 +221,7 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
   const [bal, setBal] = useState<string>();
   const [myKey, setMyKey] = useState("");
   const [reqs, setReqs] = useState<RequestItem[]>();
+  const [share, setShare] = useState<{ title: string; value: string; filename: string; extra?: { label: string; value: string } }>();
   const [signFor, setSignFor] = useState<{ kind: "propose" } | { kind: "sign"; request: string; preview: TxPreview } | undefined>();
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
@@ -307,7 +311,9 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
                       {r.stale && <Notice tone="warn">{t("ms2.stale")}</Notice>}
                       {r.expired && <Notice tone="warn">{t("ms2.expired")}</Notice>}
                       <div className="grid grid-cols-2 gap-2">
-                        <Button onClick={() => { void navigator.clipboard?.writeText(r.request); showToast(t("ms2.copied")); }} data-testid="ms-copy-request">{t("ms2.copyReq")}</Button>
+                        <Button data-testid="ms-share-request" onClick={() => void rpc<string>({ type: "sharedRequestCbor", request: r.request }).then((cbor) => setShare({
+                          title: t("ms2.shareRequest"), value: r.request, filename: `multisig-request-${r.preview.txHash.slice(0, 8)}.json`, extra: { label: t("ms2.copyCbor"), value: cbor },
+                        }))}><Share2 size={15} /> {t("ms2.shareRequest")}</Button>
                         {r.preview.enough
                           ? <Button variant="primary" loading={submit.busy} disabled={r.stale || r.expired} onClick={() => void submit.run(r.request)} data-testid="ms-submit">{t("ms2.submit")}</Button>
                           : <Button variant="primary" disabled={r.iSigned || !canSign || r.stale || r.expired} onClick={() => { act.setError(""); setSignFor({ kind: "sign", request: r.request, preview: r.preview }); }} data-testid="ms-sign">{t("ms2.sign")}</Button>}
@@ -331,12 +337,13 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
                 <ErrorText error={register.error} />
               </>
             )}
-            <Button block onClick={() => void rpc<string>({ type: "sharedExport", id }).then((j) => { void navigator.clipboard?.writeText(j); showToast(t("ms2.copied")); })} data-testid="ms-export">{t("ms2.export")}</Button>
+            <Button block onClick={() => void rpc<string>({ type: "sharedExport", id }).then((j) => setShare({ title: t("ms2.shareWallet"), value: j, filename: `multisig-wallet-${w.paymentScriptHash.slice(0, 8)}.json` }))} data-testid="ms-export"><Share2 size={15} /> {t("ms2.shareWallet")}</Button>
             <Button variant="danger" block onClick={() => void remove.run()}><Trash2 size={15} /> {t("ms2.remove")}</Button>
           </Card>
           <ErrorText error={load.error} />
         </div>
       </Screen>
+      {share && <ShareSheet {...share} onClose={() => setShare(undefined)} />}
       {signFor && (
         <SignSheet title={t("ms2.reviewTitle")} onSign={(pw) => void act.run(pw)} onCancel={() => setSignFor(undefined)} busy={act.busy} error={act.error}>
           {signFor.kind === "propose"
