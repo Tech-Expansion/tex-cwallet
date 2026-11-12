@@ -9,7 +9,10 @@ const PW = "correct-horse";
 const providers: ProviderFactory = (n) => ({
   fetcher: { fetchAddressUTxOs: async (address: string) => [{ input: { txHash: "a".repeat(64), outputIndex: 0 }, output: { address, amount: [{ unit: "lovelace", quantity: "50000000" }] } }] } as any,
   submitter: { submitTx: async () => "f".repeat(64) } as any,
-  chain: Object.assign(new KoiosClient(n, (async () => ({ ok: true, status: 200, json: async () => [] })) as any), { getProtocolParams: async () => DEFAULT_PROTOCOL_PARAMETERS }),
+  chain: Object.assign(new KoiosClient(n, (async () => ({ ok: true, status: 200, json: async () => [] })) as any), {
+    getProtocolParams: async () => DEFAULT_PROTOCOL_PARAMETERS,
+    getTip: async () => ({ hash: "b".repeat(64), epoch: 180, slot: 1_000, blockHeight: 1, blockTime: 0 }),
+  }),
 });
 
 function makeSession(): SessionStore & { data: any } {

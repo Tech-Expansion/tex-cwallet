@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Serialization, resolveTxHash } from "@meshsdk/core-cst";
-import { WalletManager, MemoryStore, parseRegistration, type ProviderFactory, type Registration } from "./index";
+import { DEFAULT_PROTOCOL_PARAMETERS } from "@meshsdk/common";
+import { WalletManager, MemoryStore, parseRegistration, signWithSharedKey, attachWitnesses, SHARED_TTL_SLOTS, type ProviderFactory, type Registration } from "./index";
 
 const M = [
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
@@ -15,6 +16,7 @@ let onChain: Registration[];
 let submitted: string[];
 let spentRefs: Set<string>;
 let landed: Set<string>;
+let tipSlot = 1_000;
 const refOf = (address: string) => ({ txHash: Buffer.from(address).toString("hex").slice(0, 64).padEnd(64, "0"), outputIndex: 1 });
 const providers: ProviderFactory = () => ({
   fetcher: {
@@ -38,10 +40,10 @@ const providers: ProviderFactory = () => ({
     },
   } as never,
   chain: {
-    getTip: async () => ({ hash: "b".repeat(64), epoch: 180, slot: 1_000, blockHeight: 1, blockTime: 0 }),
+    getTip: async () => ({ hash: "b".repeat(64), epoch: 180, slot: tipSlot, blockHeight: 1, blockTime: 0 }),
     getBalance: async () => [{ unit: "lovelace", quantity: "80000000" }],
     getHistory: async () => [],
-    getProtocolParams: async () => { throw new Error("no params"); },
+    getProtocolParams: async () => DEFAULT_PROTOCOL_PARAMETERS,
     findRegistrations: async (creds: string[]) => onChain.filter((r) => JSON.stringify(r.payment).split('"').some((x) => creds.includes(x))),
     txExists: async (h: string) => landed.has(h),
   },
@@ -60,6 +62,7 @@ beforeEach(async () => {
   submitted = [];
   spentRefs = new Set();
   landed = new Set();
+  tipSlot = 1_000;
   [A, B, C] = [await user(0), await user(1), await user(2)];
 });
 
@@ -250,3 +253,92 @@ describe("multisig kiểu Eternl: tạo → đăng ký → khám phá → đề 
     expect(String(e.message)).not.toContain("ConwayMempoolFailure\\"); // không lộ lỗi thô ở đầu thông báo
   });
 });
+
+describe("AI-8: đề xuất → co-sign → submit khi đủ chữ ký", () => {
+  async function setup2of3() {
+    const w = await createWallet();
+    await B.importShared(A.exportShared(w.id));
+    await C.importShared(A.exportShared(w.id));
+    return w;
+  }
+
+  it("AC-001: 2-of-3 — một người ký thì bị chặn, hai người ký thì submit được", async () => {
+    const w = await setup2of3();
+    const req = await A.proposeShared(w.id, DEST, 5_000_000n); // A signs (1/2)
+    await expect(A.submitRequest(req)).rejects.toMatchObject({ code: "NOT_ENOUGH" });
+    await expect(C.submitRequest(req)).rejects.toMatchObject({ code: "NOT_ENOUGH" });
+    expect(submitted).toHaveLength(0);
+    const signed = await C.signRequest(req, PW); // C signs (2/2)
+    expect(signed.preview.enough).toBe(true);
+    expect(await C.submitRequest(signed.request)).toHaveLength(64);
+    expect(submitted).toHaveLength(1);
+  });
+
+  it("người ký thấy rõ đi đâu, bao nhiêu, phí bao nhiêu, hạn tới slot nào", async () => {
+    const w = await setup2of3();
+    const req = await A.proposeShared(w.id, DEST, 7_000_000n);
+    const info = await B.inspectRequest(req);
+    const dest = info.preview.outputs.filter((o) => !o.change);
+    expect(dest).toEqual([{ address: DEST, lovelace: "7000000", tokens: 0, change: false }]);
+    expect(BigInt(info.preview.fee) > 0n).toBe(true);
+    expect(info.preview.ttl).toBe(1_000 + SHARED_TTL_SLOTS);
+  });
+
+  it("AC-002: chữ ký của key ngoài script bị từ chối (khi xem, khi ký, khi submit)", async () => {
+    const w = await setup2of3();
+    const req = JSON.parse(await A.proposeShared(w.id, DEST, 3_000_000n));
+    const outsider = "letter advice cage absurd amount doctor acoustic avoid letter advice cage above".split(" ");
+    const forged = { ...req, tx: attachWitnesses(req.tx, [await signWithSharedKey(outsider, 7, req.tx)]) }; // key not in the script
+    await expect(B.inspectRequest(JSON.stringify(forged))).rejects.toMatchObject({ code: "NOT_SIGNER" });
+    await expect(B.signRequest(JSON.stringify(forged), PW)).rejects.toMatchObject({ code: "NOT_SIGNER" });
+    await expect(A.submitRequest(JSON.stringify(forged))).rejects.toMatchObject({ code: "NOT_SIGNER" });
+    expect(submitted).toHaveLength(0);
+  });
+
+  it("AC-003: giao dịch bị sửa sau khi ký thì chữ ký cũ không còn hợp lệ", async () => {
+    const w = await setup2of3();
+    const req = JSON.parse(await A.proposeShared(w.id, DEST, 3_000_000n)); // carries A's signature
+    const t = Serialization.Transaction.fromCbor(req.tx as never);
+    const body = t.body();
+    body.setFee(body.fee() + 1n); // change the body, keep A's witness
+    t.setBody(body);
+    const tampered = { ...req, tx: t.toCbor() };
+    expect(resolveTxHash(tampered.tx)).not.toBe(resolveTxHash(req.tx));
+    await expect(B.inspectRequest(JSON.stringify(tampered))).rejects.toMatchObject({ code: "INVALID_SIGNATURE" });
+    await expect(B.signRequest(JSON.stringify(tampered), PW)).rejects.toMatchObject({ code: "INVALID_SIGNATURE" });
+    // B's signature on the original cannot be merged into the tampered one
+    const fromB = (await B.signRequest(JSON.stringify(req), PW)).request;
+    await expect(A.mergeRequests(fromB, JSON.stringify(tampered))).rejects.toThrow();
+  });
+
+  it("có thời hạn: quá hạn thì không ký, không submit được và phải đề xuất lại", async () => {
+    const w = await setup2of3();
+    const req = await A.proposeShared(w.id, DEST, 3_000_000n);
+    const signed = (await B.signRequest(req, PW)).request; // 2/2 before expiry
+    tipSlot = 1_000 + SHARED_TTL_SLOTS; // expiry reached
+    await expect(C.inspectRequest(req)).rejects.toMatchObject({ code: "EXPIRED" });
+    await expect(C.signRequest(req, PW)).rejects.toMatchObject({ code: "EXPIRED" });
+    await expect(B.submitRequest(signed)).rejects.toMatchObject({ code: "EXPIRED" });
+    expect(submitted).toHaveLength(0);
+    expect((await A.listRequests(w.id))[0]!.expired).toBe(true);
+    // propose again: the new validity end counts from the current tip
+    const again = await A.proposeShared(w.id, DEST, 3_000_000n);
+    expect((await B.inspectRequest(again)).preview.ttl).toBe(tipSlot + SHARED_TTL_SLOTS);
+  });
+
+  it("trao đổi bằng CBOR giao dịch chuẩn (dùng được với ví Cardano khác)", async () => {
+    const w = await setup2of3();
+    const req = await A.proposeShared(w.id, DEST, 3_000_000n);
+    const cbor = A.requestCbor(req);
+    expect(cbor).toMatch(/^[0-9a-f]+$/);
+    expect(() => Serialization.Transaction.fromCbor(cbor as never)).not.toThrow();
+    const info = await B.inspectRequest(cbor); // B pastes raw CBOR, the wallet is found by its script
+    expect(info.wallet.id).toBe(w.id);
+    const signed = await B.signRequest(cbor, PW);
+    expect(signed.preview.enough).toBe(true);
+    expect(await B.submitRequest(B.requestCbor(signed.request))).toHaveLength(64);
+    const stranger = await user(2);
+    await expect(stranger.inspectRequest(cbor)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+

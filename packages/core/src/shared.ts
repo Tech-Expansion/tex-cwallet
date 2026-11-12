@@ -9,7 +9,7 @@ const H = 0x80000000;
 const HEX56 = /^[0-9a-f]{56}$/;
 
 export class SharedError extends Error {
-  constructor(public code: "INVALID_CONFIG" | "INVALID_TX" | "INVALID_SIGNATURE" | "NOT_SIGNER" | "NOT_ENOUGH" | "INSUFFICIENT_FUNDS" | "NO_SCRIPT", message: string) {
+  constructor(public code: "INVALID_CONFIG" | "INVALID_TX" | "INVALID_SIGNATURE" | "NOT_SIGNER" | "NOT_ENOUGH" | "INSUFFICIENT_FUNDS" | "NO_SCRIPT" | "EXPIRED", message: string) {
     super(message);
   }
 }
@@ -157,7 +157,7 @@ const lovelaceOf = (u: UTxO) => BigInt(u.output.amount.find((a) => a.unit === "l
 const VKEY_WITNESS_BYTES = 101;
 
 /** Dựng giao dịch chưa ký chi ADA từ ví multisig; chỉ dùng UTxO thuộc địa chỉ script (CIP-1854). */
-export async function buildSharedSend(w: SharedWallet, utxos: UTxO[], to: string, lovelace: bigint, params?: Partial<Protocol>): Promise<string> {
+export async function buildSharedSend(w: SharedWallet, utxos: UTxO[], to: string, lovelace: bigint, params?: Partial<Protocol>, opts: { invalidHereafter?: number } = {}): Promise<string> {
   const own = utxos.filter((u) => u.output.address === w.address);
   const sorted = [...own].sort((a, b) => (lovelaceOf(b) > lovelaceOf(a) ? 1 : -1));
   const picked: UTxO[] = [];
@@ -176,6 +176,7 @@ export async function buildSharedSend(w: SharedWallet, utxos: UTxO[], to: string
       b.txInScript(serializeNativeScript(scripts[0] as never, w.stakeScript ? scriptHashOf(w.stakeScript) : undefined, NETWORKS[w.network].networkId).scriptCbor!);
     }
     b.txOut(to, [{ unit: "lovelace", quantity: lovelace.toString() }]).changeAddress(w.address);
+    if (opts.invalidHereafter !== undefined) b.invalidHereafter(opts.invalidHereafter); // after this slot it must be proposed again (AI-8)
     if (fee) b.setFee(fee.toString());
     return b.complete();
   };
@@ -210,6 +211,8 @@ export interface TxPreview {
   txHash: string;
   outputs: { address: string; lovelace: string; tokens: number; change: boolean }[];
   fee: string;
+  /** Slot from which the transaction is invalid (invalid_hereafter); undefined = no validity end */
+  ttl?: number;
   /** Cosigner đã ký (key hash) */
   signedBy: string[];
   enough: boolean;
@@ -249,6 +252,7 @@ export async function inspectSharedTx(w: SharedWallet, txCbor: string, opts: { r
     txHash: resolveTxHash(txCbor),
     outputs: body.outputs().map((o) => ({ address: o.address().toBech32(), lovelace: o.amount().coin().toString(), tokens: o.amount().multiasset()?.size ?? 0, change: o.address().toBech32() === w.address })),
     fee: body.fee().toString(),
+    ttl: body.ttl() === undefined ? undefined : Number(body.ttl()),
     signedBy,
     enough: new Set(signedBy).size >= w.required,
   };
