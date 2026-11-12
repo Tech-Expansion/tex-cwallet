@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { DEFAULT_PROTOCOL_PARAMETERS } from "@meshsdk/common";
 import { MemoryStore, KoiosClient, type ProviderFactory } from "@wallet/core";
 import { WalletApi, AUTO_LOCK_MS, type SessionStore } from "./api";
 
@@ -8,7 +9,7 @@ const PW = "correct-horse";
 const providers: ProviderFactory = (n) => ({
   fetcher: { fetchAddressUTxOs: async (address: string) => [{ input: { txHash: "a".repeat(64), outputIndex: 0 }, output: { address, amount: [{ unit: "lovelace", quantity: "50000000" }] } }] } as any,
   submitter: { submitTx: async () => "f".repeat(64) } as any,
-  chain: new KoiosClient(n, (async () => ({ ok: true, status: 200, json: async () => [] })) as any),
+  chain: Object.assign(new KoiosClient(n, (async () => ({ ok: true, status: 200, json: async () => [] })) as any), { getProtocolParams: async () => DEFAULT_PROTOCOL_PARAMETERS }),
 });
 
 function makeSession(): SessionStore & { data: any } {
@@ -107,12 +108,17 @@ describe("WalletApi", () => {
     expect(await api.dapp("https://x.io", "isEnabled")).toBe(false);
   });
 
-  it("gửi ADA yêu cầu nhập lại mật khẩu", async () => {
+  it("gửi ADA: xem trước (số tiền, phí, người nhận) rồi mới ký, ký cần nhập lại mật khẩu", async () => {
     await api.handle({ type: "setup", password: PW });
     await api.handle({ type: "addWallet", name: "A", mnemonic: M });
     const to = (await api.manager.deriveFor(M)).baseAddress;
-    await expect(api.handle({ type: "sendAda", to, lovelace: "2000000", password: "sai-mat-khau" })).rejects.toMatchObject({ code: "BAD_PASSWORD" });
-    expect(await api.handle({ type: "sendAda", to, lovelace: "2000000", password: PW })).toHaveLength(64);
+    const p: any = await api.handle({ type: "prepareSend", to, lovelace: "2000000" });
+    expect(p).toMatchObject({ to, lovelace: "2000000" });
+    expect(BigInt(p.fee) > 0n).toBe(true);
+    expect(BigInt(p.totalLovelace)).toBe(2_000_000n + BigInt(p.fee));
+    await expect(api.handle({ type: "prepareSend", to, lovelace: "1.5" })).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+    await expect(api.handle({ type: "confirmSend", txHash: p.txHash, password: "sai-mat-khau" })).rejects.toMatchObject({ code: "BAD_PASSWORD" });
+    expect(await api.handle({ type: "confirmSend", txHash: p.txHash, password: PW })).toHaveLength(64);
   });
 });
 

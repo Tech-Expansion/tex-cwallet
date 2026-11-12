@@ -157,6 +157,12 @@ export function Receive({ st, data, go }: { st: AppState; data: Data; go: (r: st
   );
 }
 
+interface SendPreviewRpc {
+  txHash: string; to: string; lovelace: string; minLovelace: string; fee: string; totalLovelace: string;
+  assets: { unit: string; quantity: string }[];
+  change: { address: string; lovelace: string; assets: { unit: string; quantity: string }[] };
+}
+
 export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: string) => void }) {
   const t = useT();
   const net = netOf(st);
@@ -164,12 +170,21 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
   const [formErr, setFormErr] = useState("");
-  const [sheet, setSheet] = useState(false);
-  const lovelace = parseAda(amt);
+  const [preview, setPreview] = useState<SendPreviewRpc>();
+  const lovelace = amt.trim() ? parseAda(amt) : undefined;
+
+  const prepare = useAction(async () => {
+    const p = await rpc<SendPreviewRpc>({
+      type: "prepareSend",
+      to: to.trim(),
+      lovelace: lovelace!.toString(),
+    });
+    setPreview(p);
+  });
 
   const send = useAction(async (password: string) => {
-    const hash = await rpc<string>({ type: "sendAda", to: to.trim(), lovelace: lovelace!.toString(), password });
-    setSheet(false);
+    const hash = await rpc<string>({ type: "confirmSend", txHash: preview!.txHash, password });
+    setPreview(undefined);
     showToast(t("send.done"), net.explorerTxUrl + hash);
     void data.reload();
     go("/");
@@ -177,11 +192,11 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
 
   const review = () => {
     if (lovelace === null) return setFormErr(t("send.badAmt"));
-    if (lovelace < 1_000_000n) return setFormErr(t("send.minAmt"));
+    if (lovelace === undefined || lovelace < 1_000_000n) return setFormErr(t("send.minAmt"));
     if (!to.trim().startsWith(net.addressPrefix)) return setFormErr(t("send.badAddr", { prefix: net.addressPrefix, net: net.label }));
     setFormErr("");
     send.setError("");
-    setSheet(true);
+    void prepare.run();
   };
 
   if (wallet?.kind === "watch")
@@ -189,22 +204,23 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
 
   return (
     <>
-      <Screen footer={<Button variant="primary" block onClick={review} disabled={!to || !amt}>{t("send.review")}</Button>}>
+      <Screen footer={<Button variant="primary" block onClick={review} loading={prepare.busy} disabled={!to || !amt}>{t("send.review")}</Button>}>
         <TopBar title={t("send.title")} onBack={() => go("/")} right={<NetworkPill net={net} />} />
         <div className="space-y-3.5 animate-fade-up">
           <Field label={t("send.to")}><textarea className="field min-h-[76px] resize-none font-mono" aria-label={t("send.to")} placeholder={`${net.addressPrefix}…`} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
           <Field label={t("send.amount")} hint={t("send.max")}><input className="field" inputMode="decimal" aria-label={t("send.amount")} placeholder="0.0" value={amt} onChange={(e) => setAmt(e.target.value)} /></Field>
-          <ErrorText error={formErr} />
+          <ErrorText error={formErr || prepare.error} />
         </div>
       </Screen>
-      {sheet && (
-        <SignSheet title={t("send.sheetTitle")} onSign={(pw) => void send.run(pw)} onCancel={() => setSheet(false)} busy={send.busy} error={send.error}>
-          <Card className="space-y-2 p-3">
+      {preview && (
+        <SignSheet title={t("send.sheetTitle")} onSign={(pw) => void send.run(pw)} onCancel={() => setPreview(undefined)} busy={send.busy} error={send.error}>
+          <Card className="space-y-2 p-3" data-testid="send-preview">
             <div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("send.amountLine")} · {net.label}</div>
-            <div className="text-[22px] font-semibold tabular-nums text-ink">{fmtAda(lovelace!)} {net.unit}</div>
+            <div className="text-[22px] font-semibold tabular-nums text-ink">{fmtAda(preview.lovelace)} {net.unit}</div>
             <div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("send.toLine")}</div>
-            <div className="break-all font-mono text-[11.5px] text-moon">{to.trim()}</div>
-            <p className="text-[11px] text-moon-dim">{t("send.feeNote")}</p>
+            <div className="break-all font-mono text-[11.5px] text-moon">{preview.to}</div>
+            <div className="flex justify-between text-[12.5px] text-moon"><span>{t("send.fee")}</span><span className="tabular-nums" data-testid="send-fee">{fmtAda(preview.fee)} {net.unit}</span></div>
+            <div className="flex justify-between text-[12.5px] font-medium text-ink"><span>{t("send.total")}</span><span className="tabular-nums">{fmtAda(preview.totalLovelace)} {net.unit}</span></div>
           </Card>
         </SignSheet>
       )}

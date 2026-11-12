@@ -74,7 +74,8 @@ export function summarizeBalance(balances: AssetBalance[]): WalletBalance {
   const assets: AssetInfo[] = [...byUnit]
     .filter(([, q]) => q !== 0n)
     .map(([unit, quantity]) => {
-      const { policyId, assetNameHex } = parseUnit(unit);
+      let policyId = unit, assetNameHex = "";
+      try { ({ policyId, assetNameHex } = parseUnit(unit)); } catch { /* unexpected unit from the data source: keep as is */ }
       return { unit, policyId, assetNameHex, assetName: decodeAssetName(assetNameHex), quantity };
     })
     .sort((a, b) => (a.policyId === b.policyId ? cmp(a.assetNameHex, b.assetNameHex) : cmp(a.policyId, b.policyId)));

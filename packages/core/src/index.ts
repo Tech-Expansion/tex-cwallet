@@ -8,6 +8,7 @@ export * from "./errors";
 export * from "./manager";
 export * from "./summary";
 export * from "./balance";
+export * from "./send";
 export * from "./chain";
 export * from "./blockfrost";
 export * from "./shared";

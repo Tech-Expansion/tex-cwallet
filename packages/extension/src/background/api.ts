@@ -1,4 +1,4 @@
-import { summarizeTx, serializeBalance, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeBalance, serializeSendPreview, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -45,7 +45,8 @@ export type Req =
   | { type: "balance" }
   | { type: "walletBalance" }
   | { type: "history"; limit?: number }
-  | { type: "sendAda"; to: string; lovelace: string; password: string }
+  | { type: "prepareSend"; to: string; lovelace?: string; assets?: { unit: string; quantity: string }[] }
+  | { type: "confirmSend"; txHash: string; password: string }
   | { type: "exportMnemonic"; id: string; password: string }
   | { type: "sharedList" }
   | { type: "sharedKey"; y: number }
@@ -164,9 +165,14 @@ export class WalletApi {
         return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
-      case "sendAda":
-        await m.verifyPassword(req.password);
-        return m.sendAda(req.to, BigInt(req.lovelace));
+      case "prepareSend":
+        return serializeSendPreview(await m.prepareSend({
+          to: req.to,
+          lovelace: req.lovelace === undefined || req.lovelace === "" ? undefined : toBigInt(req.lovelace),
+          assets: (req.assets ?? []).map((x) => ({ unit: x.unit, quantity: toBigInt(x.quantity) })),
+        }));
+      case "confirmSend":
+        return m.confirmSend(req.txHash, req.password);
       case "exportMnemonic":
         return m.exportMnemonic(req.id, req.password);
       case "sharedList":
@@ -289,4 +295,10 @@ export class WalletApi {
   async disconnectAll() {
     await this.setConnected(new Set());
   }
+}
+
+/** Non-negative integer string -> bigint (rejects decimals and other characters). */
+function toBigInt(v: string): bigint {
+  if (!/^\d{1,40}$/.test(v)) throw new WalletError("INVALID_AMOUNT", "Số lượng không hợp lệ");
+  return BigInt(v);
 }
