@@ -3,3 +3,4 @@ dist
 .env
 *.log
 .flow-preprod
+dist-web

@@ -1,15 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-export type Net = "mainnet" | "preprod" | "preview";
+/** The proxy serves preprod only (Epic AI-1): no upstream points at another network. */
+export type Net = "preprod";
 const UPSTREAM: Record<Net, string> = {
-  mainnet: "https://cardano-mainnet.blockfrost.io/api/v0",
   preprod: "https://cardano-preprod.blockfrost.io/api/v0",
-  preview: "https://cardano-preview.blockfrost.io/api/v0",
 };
 
-const KOIOS: Record<"preprod" | "preview", string> = {
+const KOIOS: Record<Net, string> = {
   preprod: "https://preprod.koios.rest/api/v1",
-  preview: "https://preview.koios.rest/api/v1",
 };
 /** Endpoint Koios ví cần (chỉ đọc + gửi giao dịch). Koios không gửi header CORS cho phản hồi POST nên bản web phải đi qua đây. */
 const KOIOS_ALLOWED = /^\/(tip|address_info|address_txs|address_utxos|tx_info|tx_cbor|tx_by_metalabel|epoch_params|submittx)(\?|$)/;
@@ -27,7 +25,7 @@ export interface ProxyOptions {
   allowOrigin?: string;
   upstream?: Partial<Record<Net, string>>;
   /** Ghi đè URL Koios (dùng khi kiểm thử) */
-  koiosUpstream?: Partial<Record<"preprod" | "preview", string>>;
+  koiosUpstream?: Partial<Record<Net, string>>;
   /** Chỉ tin X-Forwarded-For khi chạy sau reverse proxy đáng tin (nếu không, client giả IP để né giới hạn) */
   trustProxy?: boolean;
 }
@@ -46,7 +44,7 @@ export function ttlFor(path: string): number {
   return 15_000;
 }
 
-const group = (path: string) => path.split("?")[0]!.replace(/[0-9a-f]{64}/g, ":hash").replace(/(addr1|addr_test1)[a-z0-9]+/g, ":addr");
+const group = (path: string) => path.split("?")[0]!.replace(/[0-9a-f]{64}/g, ":hash").replace(/addr_test1[a-z0-9]+/g, ":addr");
 
 export interface Stats {
   upstream: Record<string, number>;
@@ -78,7 +76,7 @@ export function createProxy(opts: ProxyOptions) {
     return arr.length > limit;
   }
 
-  async function fromUpstream(net: Net, method: string, path: string, body: Buffer | undefined, contentType: string | undefined, koios?: "preprod" | "preview") {
+  async function fromUpstream(net: Net, method: string, path: string, body: Buffer | undefined, contentType: string | undefined, koios?: Net) {
     const base = koios ? (opts.koiosUpstream?.[koios] ?? KOIOS[koios]) : (opts.upstream?.[net] ?? UPSTREAM[net]);
     const label = koios ? `koios-${koios}` : net;
     bump(stats.upstream, label);
@@ -103,10 +101,10 @@ export function createProxy(opts: ProxyOptions) {
     }
     if (url.pathname === "/healthz") return send(200, '{"ok":true}');
 
-    const km = url.pathname.match(/^\/koios\/(preprod|preview)\/api\/v1(\/.*)?$/);
-    const m = km ? null : url.pathname.match(/^\/(mainnet|preprod|preview)\/api\/v0(\/.*)?$/);
+    const km = url.pathname.match(/^\/koios\/(preprod)\/api\/v1(\/.*)?$/);
+    const m = km ? null : url.pathname.match(/^\/(preprod)\/api\/v0(\/.*)?$/);
     if (!km && !m) return send(404, '{"error":"not found"}');
-    const koios = km ? (km[1] as "preprod" | "preview") : undefined;
+    const koios = km ? (km[1] as Net) : undefined;
     const net = (koios ?? m![1]) as Net;
     const path = ((km ? km[2] : m![2]) ?? "/") + url.search;
     if (koios) {

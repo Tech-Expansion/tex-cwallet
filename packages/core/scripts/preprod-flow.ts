@@ -30,7 +30,7 @@ async function user(name: string, create: boolean) {
   if (!m.hasVault()) {
     if (!create) throw new Error(`Chưa có ví ${name}: chạy "setup" trước`);
     await m.setupPassword(PW);
-    await m.addWallet(name, m.newMnemonic(24));
+    await m.addWallet(name, m.newMnemonic());
   } else await m.unlock(PW);
   await m.setNetwork("preprod");
   return m;

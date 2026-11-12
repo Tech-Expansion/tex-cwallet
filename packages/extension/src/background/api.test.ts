@@ -101,9 +101,7 @@ describe("WalletApi", () => {
     const w: any = await api.handle({ type: "addWallet", name: "A", mnemonic: M });
     api.onApprovalNeeded = (a) => void api.handle({ type: "resolveApproval", id: a.id, ok: true });
     await api.dapp("https://x.io", "enable");
-    await api.handle({ type: "setNetwork", network: "preview" });
-    expect(await api.dapp("https://x.io", "isEnabled")).toBe(false);
-    await api.dapp("https://x.io", "enable");
+    await expect(api.handle({ type: "setNetwork", network: "preview" as never })).rejects.toMatchObject({ code: "UNSUPPORTED_NETWORK" });
     await api.handle({ type: "setActive", walletId: w.id, account: 0 });
     expect(await api.dapp("https://x.io", "isEnabled")).toBe(false);
   });
@@ -117,21 +115,20 @@ describe("WalletApi", () => {
   });
 });
 
-describe("WalletApi – 3 mạng", () => {
-  it("state mô tả mạng, mainnet bị khóa tới khi bật, bật/tắt ngắt dApp", async () => {
+describe("WalletApi – chỉ preprod", () => {
+  it("state chỉ có preprod; mạng khác bị từ chối; proxy Blockfrost preprod tuỳ chọn", async () => {
     const store = new MemoryStore();
     const a = new WalletApi(store, makeSession(), providers, () => 1);
     await a.handle({ type: "setup", password: PW });
     await a.handle({ type: "addWallet", name: "A", mnemonic: M });
     const st: any = await a.handle({ type: "state" });
-    expect(st.networks.map((n: any) => n.name)).toEqual(["preview", "preprod", "mainnet"]);
-    expect(st.networks.find((n: any) => n.name === "mainnet")).toMatchObject({ realFunds: true, unit: "ADA", addressPrefix: "addr1" });
-    expect(st.mainnetEnabled).toBe(false);
-    await expect(a.handle({ type: "setNetwork", network: "mainnet" })).rejects.toMatchObject({ code: "MAINNET_DISABLED" });
-    await a.handle({ type: "setMainnet", enabled: true });
-    await a.handle({ type: "setNetwork", network: "mainnet" });
-    expect(((await a.handle({ type: "state" })) as any).network).toBe("mainnet");
-    expect(((await a.handle({ type: "account" })) as any).baseAddress.startsWith("addr1")).toBe(true);
+    expect(st.network).toBe("preprod");
+    expect(st.networks.map((n: any) => n.name)).toEqual(["preprod"]);
+    expect(st.networks[0]).toMatchObject({ unit: "tADA", addressPrefix: "addr_test1" });
+    expect(st.mainnetEnabled).toBeUndefined();
+    await expect(a.handle({ type: "setNetwork", network: "mainnet" as never })).rejects.toMatchObject({ code: "UNSUPPORTED_NETWORK" });
+    await expect(a.handle({ type: "setMainnet", enabled: true } as never)).rejects.toThrow();
+    expect(((await a.handle({ type: "account" })) as any).baseAddress.startsWith("addr_test1")).toBe(true);
     await a.handle({ type: "setProvider", proxyUrl: " https://p.example.com ", proxyForTestnets: true });
     expect(((await a.handle({ type: "state" })) as any).provider).toEqual({ proxyUrl: "https://p.example.com", proxyForTestnets: true });
   });

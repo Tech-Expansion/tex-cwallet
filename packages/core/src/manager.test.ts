@@ -117,13 +117,12 @@ describe("WalletManager", () => {
     expect(h.map((t) => [t.hash, t.netLovelace])).toEqual([["t2", -2000000n], ["t1", 7000000n]]);
   });
 
-  it("đổi mạng preprod <-> preview", async () => {
+  it("chỉ preprod: không đổi được sang mạng khác, state lưu lại vẫn là preprod", async () => {
     await ready();
-    await m.setNetwork("preview");
-    expect(m.network).toBe("preview");
+    await expect(m.setNetwork("preview")).rejects.toMatchObject({ code: "UNSUPPORTED_NETWORK" });
     const m2 = new WalletManager(store, factory);
     await m2.load();
-    expect(m2.network).toBe("preview");
+    expect(m2.network).toBe("preprod");
   });
 
   it("gửi ADA: build, ký, submit", async () => {

@@ -1,5 +1,5 @@
 import type { Protocol } from "@meshsdk/core";
-import type { AssetBalance, TxSummary } from "./koios";
+import type { AssetBalance, ChainTip, TxSummary } from "./koios";
 import { parseRegistration, registrationHasKey, REGISTRATION_LABEL, type Registration } from "./registration";
 
 type Fetch = typeof fetch;
@@ -71,6 +71,12 @@ export class BlockfrostClient {
       if (batch.length < 100) break;
     }
     return found;
+  }
+
+  async getTip(): Promise<ChainTip> {
+    const b = await this.get<{ hash: string; epoch: number; slot: number; height: number; time: number }>("/blocks/latest");
+    if (!b) throw new Error("Blockfrost không trả tip");
+    return { hash: b.hash, epoch: b.epoch, slot: b.slot, blockHeight: b.height, blockTime: b.time };
   }
 
   async txExists(txHash: string): Promise<boolean> {

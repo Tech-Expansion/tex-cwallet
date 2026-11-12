@@ -22,7 +22,7 @@ if (!LIVE) {
     res.statusCode = 404; res.end("{}");
   });
   await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
-  proxy = createProxy({ keys: { mainnet: "K" }, upstream: { mainnet: `http://127.0.0.1:${upstream.address().port}/api/v0` } });
+  proxy = createProxy({ keys: { preprod: "K" }, upstream: { preprod: `http://127.0.0.1:${upstream.address().port}/api/v0` } });
   const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml" };
   const web = createServer((req, res) => {
     if (req.url.startsWith("/proxy/")) { req.url = req.url.slice(6); return void proxy.handle(req, res); }
@@ -75,24 +75,16 @@ try {
   log("multisig trên web OK");
   await page.getByRole("button", { name: "Tab Ví" }).click();
 
-  // Mainnet: tắt mặc định → bật → địa chỉ addr1 → số dư qua proxy (mặc định cùng origin /proxy)
+  // Preprod only: no other network to choose
   await page.getByRole("button", { name: "Tab Cài đặt" }).click();
+  assert.equal(await page.getByTestId("network-fixed").innerText(), "Preprod");
   assert.equal(await page.getByRole("tab", { name: "Mainnet" }).count(), 0);
-  await page.getByText("Tôi hiểu rủi ro").click();
-  await page.getByTestId("enable-mainnet").click();
-  await page.getByRole("tab", { name: "Mainnet" }).click();
+  assert.equal(await page.getByRole("tab", { name: "Preview" }).count(), 0);
   await page.getByRole("button", { name: "Tab Ví" }).click();
-  await page.getByTestId("network-pill").filter({ hasText: "Mainnet" }).waitFor();
-  await page.waitForFunction(() => /^\d/.test(document.querySelector("[data-testid=balance]")?.textContent ?? ""), null, { timeout: 20000 });
-  const bal = await page.getByTestId("balance").innerText();
-  if (!LIVE) assert.equal(bal, "12");
-  else assert.equal(bal, "0", "ví mới trên mainnet phải có số dư 0 (kiểm tra khóa Blockfrost hoạt động)");
   await page.getByRole("button", { name: "Nhận" }).click();
-  assert.match(await page.getByTestId("addr").innerText(), /^addr1/);
-  log(`mainnet qua proxy OK, số dư ${bal}`);
+  assert.match(await page.getByTestId("addr").innerText(), /^addr_test1/);
   await page.getByRole("button", { name: "Quay lại" }).click();
-  await page.getByRole("button", { name: "Tab Cài đặt" }).click();
-  await page.getByRole("tab", { name: "Preprod" }).click();
+  log("chỉ preprod OK");
 
   // Tải lại: ví tự khóa, dữ liệu còn
   await page.reload();
@@ -107,7 +99,7 @@ try {
   assert.ok(raw.includes('"vault"') && !/"words"/.test(raw));
   log("khóa khi tải lại + dữ liệu mã hóa OK");
   assert.equal(errors.length, 0, "lỗi JS: " + errors.join("; "));
-  if (proxy) log(`proxy: upstream=${proxy.stats.upstream.mainnet} client=${proxy.stats.clientRequests}`);
+  if (proxy) log(`proxy: upstream=${proxy.stats.upstream.preprod ?? 0} client=${proxy.stats.clientRequests}`);
   console.log("WEB E2E PASS");
 } finally {
   await browser.close();

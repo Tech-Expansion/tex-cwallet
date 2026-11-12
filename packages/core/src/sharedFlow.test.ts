@@ -38,6 +38,7 @@ const providers: ProviderFactory = () => ({
     },
   } as never,
   chain: {
+    getTip: async () => ({ hash: "b".repeat(64), epoch: 180, slot: 1_000, blockHeight: 1, blockTime: 0 }),
     getBalance: async () => [{ unit: "lovelace", quantity: "80000000" }],
     getHistory: async () => [],
     getProtocolParams: async () => { throw new Error("no params"); },

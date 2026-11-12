@@ -6,7 +6,7 @@ const TEST = "abandon abandon abandon abandon abandon abandon abandon abandon ab
 
 describe("mnemonic", () => {
   it("sinh 24 từ hợp lệ", () => {
-    const m = generateMnemonic(24);
+    const m = generateMnemonic();
     expect(m).toHaveLength(24);
     expect(validateMnemonic(m)).toBe(true);
   });
@@ -29,9 +29,8 @@ describe("vault", () => {
 describe("derive", () => {
   it("địa chỉ testnet bắt đầu bằng addr_test và ổn định", async () => {
     const a = await deriveAccount(TEST, "preprod", 0);
-    const b = await deriveAccount(TEST, "preview", 0);
     expect(a.baseAddress.startsWith("addr_test1")).toBe(true);
-    expect(a.baseAddress).toBe(b.baseAddress); // cùng network id 0
+    expect((await deriveAccount(TEST, "preprod", 0)).baseAddress).toBe(a.baseAddress);
     const c = await deriveAccount(TEST, "preprod", 1);
     expect(c.baseAddress).not.toBe(a.baseAddress);
   });

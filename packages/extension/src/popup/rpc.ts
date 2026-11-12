@@ -13,15 +13,14 @@ export let rpc = async <T = any>(req: Record<string, unknown>): Promise<T> => {
 export const setRpc = (f: typeof rpc) => (rpc = f);
 
 export interface WalletMeta { id: string; name: string; kind: "mnemonic" | "watch"; accounts: { index: number; name: string }[]; address?: string }
-export type NetName = "preview" | "preprod" | "mainnet";
-export interface NetInfo { name: NetName; label: string; faucetUrl?: string; explorerTxUrl: string; realFunds: boolean; unit: "ADA" | "tADA"; addressPrefix: string }
+export type NetName = "preprod";
+export interface NetInfo { name: NetName; label: string; faucetUrl?: string; explorerTxUrl: string; unit: "tADA"; addressPrefix: string }
 export interface AppState {
   hasVault: boolean;
   unlocked: boolean;
   wallets: WalletMeta[];
   active: { walletId?: string; account: number };
   network: NetName;
-  mainnetEnabled: boolean;
   provider: { proxyUrl?: string; proxyForTestnets?: boolean };
   networks: NetInfo[];
 }

@@ -1,8 +1,8 @@
 import { MeshWallet, Transaction, deserializeAddress } from "@meshsdk/core";
 import { toValue, Address, resolveTxHash, Serialization } from "@meshsdk/core-cst";
-import { NETWORKS, DEFAULT_NETWORK, type NetworkName } from "./networks";
+import { NETWORKS, DEFAULT_NETWORK, assertNetwork, UnsupportedNetworkError, type NetworkName } from "./networks";
 import { encrypt, decrypt, type EncryptedBlob } from "./vault";
-import { generateMnemonic, normalizeMnemonic, validateMnemonic } from "./mnemonic";
+import { generateMnemonic, normalizeMnemonic, checkMnemonic, describeMnemonicProblem } from "./mnemonic";
 import { deriveAccount, type DerivedAccount } from "./wallet";
 import type { AssetBalance, TxSummary } from "./koios";
 import { defaultProviders, type ProviderFactory, type ProviderSettings } from "./chain";
@@ -30,7 +30,6 @@ interface State {
   activeWalletId?: string;
   activeAccount: number;
   network: NetworkName;
-  mainnetEnabled?: boolean;
   shared?: SharedEntry[];
   requests?: Record<string, SignRequest[]>;
   providerSettings?: ProviderSettings;
@@ -75,7 +74,11 @@ export class WalletManager {
   async load() {
     if (this.loaded) return;
     const s = await this.store.get<State>(KEY);
-    if (s) this.state = s;
+    if (s) {
+      // Old multi-network state may hold wallets or sign requests of other networks: refuse to load it.
+      assertStoredNetwork(s.network);
+      this.state = s;
+    }
     this.loaded = true;
   }
   private async save() {
@@ -142,14 +145,16 @@ export class WalletManager {
   }
 
   // ---------- quản lý ví ----------
-  newMnemonic(words: 12 | 15 | 24 = 24) {
-    return generateMnemonic(words);
+  /** New mnemonic: always 24 words (AI-3). */
+  newMnemonic() {
+    return generateMnemonic();
   }
 
   async addWallet(name: string, mnemonic: string[] | string): Promise<WalletMeta> {
     const pw = this.requireUnlocked();
     const words = typeof mnemonic === "string" ? normalizeMnemonic(mnemonic) : mnemonic;
-    if (!validateMnemonic(words)) throw new WalletError("INVALID_MNEMONIC", "Mnemonic không hợp lệ");
+    const problem = checkMnemonic(words);
+    if (problem) throw new WalletError("INVALID_MNEMONIC", describeMnemonicProblem(problem));
     const first = await deriveAccount(words, this.state.network, 0);
     if (this.state.wallets.some((w) => w.kind === "mnemonic" && this.session.get(w.id)?.join(" ") === words.join(" ")))
       throw new WalletError("INVALID_MNEMONIC", "Ví này đã được thêm");
@@ -214,21 +219,13 @@ export class WalletManager {
     await this.save();
   }
 
-  async setNetwork(n: NetworkName) {
-    if (!NETWORKS[n]) throw new WalletError("NOT_FOUND", "Mạng không hỗ trợ");
-    if (NETWORKS[n].realFunds && !this.state.mainnetEnabled) throw new WalletError("MAINNET_DISABLED", "Mainnet đang tắt. Bật trong Cài đặt nâng cao.");
-    this.state.network = n;
-    await this.save();
-  }
-
-  get mainnetEnabled() {
-    return !!this.state.mainnetEnabled;
-  }
-  /** Bật/tắt mainnet. Tắt khi đang ở mainnet thì tự quay về mạng mặc định. */
-  async setMainnetEnabled(on: boolean) {
-    this.requireUnlocked();
-    this.state.mainnetEnabled = on;
-    if (!on && NETWORKS[this.state.network].realFunds) this.state.network = DEFAULT_NETWORK;
+  /** Preprod only. Kept so old RPC callers get a clear error instead of silence. */
+  async setNetwork(n: unknown) {
+    try {
+      this.state.network = assertNetwork(n);
+    } catch (e) {
+      throw new WalletError("UNSUPPORTED_NETWORK", (e as Error).message);
+    }
     await this.save();
   }
   get providerSettings(): ProviderSettings {
@@ -267,6 +264,11 @@ export class WalletManager {
     return this.p().chain.getBalance([a.baseAddress]);
   }
 
+  /** Preprod chain tip (AI-2 AC-002) */
+  getTip() {
+    return this.p().chain.getTip();
+  }
+
   async getHistory(limit = 20): Promise<TxSummary[]> {
     const a = await this.getAccount();
     return this.p().chain.getHistory(a.baseAddress, limit);
@@ -281,12 +283,12 @@ export class WalletManager {
     const utxos = await wallet.getUtxos();
     const total = utxos.reduce((s, u) => s + BigInt(u.output.amount.find((x) => x.unit === "lovelace")?.quantity ?? 0), 0n);
     if (total < lovelace + 200_000n) throw new WalletError("INSUFFICIENT_FUNDS", "Không đủ số dư");
-    // Phí tính theo tham số giao thức thật của mạng; mainnet không được phép dùng giá trị mặc định.
+    // Phí tính theo tham số giao thức thật của preprod.
     let params: Awaited<ReturnType<ReturnType<WalletManager["p"]>["chain"]["getProtocolParams"]>> | undefined;
     try {
       params = await this.p().chain.getProtocolParams();
     } catch (e) {
-      if (NETWORKS[this.state.network].realFunds) throw new WalletError("NOT_FOUND", `Không lấy được tham số giao thức: ${(e as Error).message}`);
+      void e; // AI-5 sẽ bắt buộc tham số giao thức thật
     }
     const tx = new Transaction({ initiator: wallet, params }).sendLovelace(to, lovelace.toString());
     const unsigned = await tx.build();
@@ -461,7 +463,7 @@ export class WalletManager {
     const w = this.sharedById(id);
     if (w.myIndex === undefined) throw new SharedError("NOT_SIGNER", "Khóa của bạn không nằm trong ví này");
     const wallet = await this.meshWallet();
-    const params = await this.p().chain.getProtocolParams().catch((e) => { if (NETWORKS[this.state.network].realFunds) throw e; return undefined; });
+    const params = await this.p().chain.getProtocolParams().catch(() => undefined);
     const change = await wallet.getChangeAddress();
     const tx = await buildRegistrationTx(w, await wallet.getUtxos(), change, params);
     const signed = await wallet.signTx(tx);
@@ -538,7 +540,7 @@ export class WalletManager {
     if (w.myIndex === undefined) throw new SharedError("NOT_SIGNER", "Khóa của bạn không nằm trong ví này");
     const { fetcher } = this.p();
     const utxos = await fetcher.fetchAddressUTxOs(w.address);
-    const params = await this.p().chain.getProtocolParams().catch((e) => { if (NETWORKS[this.state.network].realFunds) throw e; return undefined; });
+    const params = await this.p().chain.getProtocolParams().catch(() => undefined);
     const unsigned = await buildSharedSend(w, utxos, to, lovelace, params);
     const signed = attachWitnesses(unsigned, [await signWithSharedKey(this.ownerWords(w), w.myIndex, unsigned)]);
     const req: SignRequest = { v: 1, kind: "cardano-multisig-sign-request", walletId: w.id, network: w.network, tx: signed, memo: memo?.slice(0, 200), createdAt: Date.now() };
@@ -680,7 +682,7 @@ export class WalletManager {
     return deriveAccount(w, this.state.network, 0);
   }
 
-  /** Địa chỉ phải đúng định dạng và đúng mạng đang dùng (không gửi nhầm testnet <-> mainnet). */
+  /** The address must be a valid preprod address (addr_test1…); mainnet addresses are rejected. */
   assertAddress(addr: string) {
     const cfg = NETWORKS[this.state.network];
     try {
@@ -689,5 +691,15 @@ export class WalletManager {
     } catch {
       throw new WalletError("INVALID_ADDRESS", `Địa chỉ ${cfg.label} không hợp lệ (phải bắt đầu bằng ${cfg.addressPrefix})`);
     }
+  }
+}
+
+/** State stored by the old multi-network build (preview/mainnet) is rejected at startup. */
+function assertStoredNetwork(n: unknown) {
+  try {
+    assertNetwork(n);
+  } catch (e) {
+    if (e instanceof UnsupportedNetworkError) throw new WalletError("UNSUPPORTED_NETWORK", e.message);
+    throw e;
   }
 }

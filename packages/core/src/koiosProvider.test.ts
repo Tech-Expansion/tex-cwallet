@@ -46,13 +46,11 @@ describe("chọn nguồn dữ liệu cho testnet", () => {
     const f = (async (url: string) => { calls.push(url); return json([]); }) as never;
     const direct = defaultProviders("preprod", {});
     expect(direct.chain).toBeInstanceOf(KoiosClient);
-    const web = defaultProviders("preview", { proxyUrl: "https://w.example.com/proxy/", koiosViaProxy: true });
-    const c = new KoiosClient("preview", f, "https://w.example.com/proxy/koios/preview/api/v1");
+    const web = defaultProviders("preprod", { proxyUrl: "https://w.example.com/proxy/", koiosViaProxy: true });
+    const c = new KoiosClient("preprod", f, "https://w.example.com/proxy/koios/preprod/api/v1");
     await c.getHistory("addr_test1x");
-    expect(calls[0]).toBe("https://w.example.com/proxy/koios/preview/api/v1/address_txs");
+    expect(calls[0]).toBe("https://w.example.com/proxy/koios/preprod/api/v1/address_txs");
     expect(web.chain).toBeInstanceOf(KoiosClient);
-    // mainnet luôn qua Blockfrost proxy, không bị ảnh hưởng
-    expect(() => defaultProviders("mainnet", { koiosViaProxy: true })).toThrow(/proxy/);
   });
 });
 

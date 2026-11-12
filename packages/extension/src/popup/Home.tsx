@@ -11,14 +11,8 @@ import { HoverList, useHoverItem } from "./ui/aceternity/HoverHighlight";
 type Data = ReturnType<typeof useWalletData>;
 export const netOf = (st: AppState) => st.networks.find((n) => n.name === st.network)!;
 
-/** Mạng có tiền thật (mainnet) nổi bật màu cảnh báo để không nhầm với testnet. */
-export const NetworkPill = ({ net }: { net: NetInfo }) =>
-  net.realFunds ? (
-    <span data-testid="network-pill" className="flex items-center gap-1.5 rounded-full border border-warn/50 bg-warn/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-warn">
-      <span className="h-1.5 w-1.5 rounded-full bg-warn shadow-[0_0_6px] shadow-warn" />
-      {net.label}
-    </span>
-  ) : (
+/** Network label (always preprod). */
+export const NetworkPill = ({ net }: { net: NetInfo }) => (
     <span data-testid="network-pill" className="flex items-center gap-1.5 rounded-full border border-night-700 bg-night-900 px-2.5 py-1 text-[11px] font-medium text-moon-soft">
       <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-[0_0_6px] shadow-ok" />
       {net.label}
@@ -153,7 +147,7 @@ export function Receive({ st, data, go }: { st: AppState; data: Data; go: (r: st
       <div className="space-y-4 animate-fade-up">
         {data.addr ? <Qr value={data.addr} /> : <div className="grid h-[236px] place-items-center"><Spinner /></div>}
         <CopyField value={data.addr} testId="addr" />
-        <Notice tone={netOf(st).realFunds ? "warn" : "info"}>{netOf(st).realFunds ? t("receive.noteMain") : t("receive.note")}</Notice>
+        <Notice tone="info">{t("receive.note")}</Notice>
         {netOf(st).faucetUrl && <a href={netOf(st).faucetUrl} target="_blank" rel="noreferrer" className="block text-center text-[12px] text-accent hover:underline">{t("dash.faucet")}</a>}
       </div>
     </Screen>
@@ -202,7 +196,6 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
       </Screen>
       {sheet && (
         <SignSheet title={t("send.sheetTitle")} onSign={(pw) => void send.run(pw)} onCancel={() => setSheet(false)} busy={send.busy} error={send.error}>
-          {net.realFunds && <Notice tone="warn">{t("send.mainnetWarn")}</Notice>}
           <Card className="space-y-2 p-3">
             <div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("send.amountLine")} · {net.label}</div>
             <div className="text-[22px] font-semibold tabular-nums text-ink">{fmtAda(lovelace!)} {net.unit}</div>

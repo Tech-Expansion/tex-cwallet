@@ -1,14 +1,16 @@
 import { BlockfrostProvider } from "@meshsdk/core";
 import type { IFetcher, ISubmitter, Protocol } from "@meshsdk/core";
 import { castProtocol } from "@meshsdk/common";
-import { NETWORKS, type NetworkName } from "./networks";
-import { KoiosClient, type AssetBalance, type TxSummary } from "./koios";
+import { NETWORKS, assertNetwork, type NetworkName } from "./networks";
+import { KoiosClient, type AssetBalance, type ChainTip, type TxSummary } from "./koios";
 import { KoiosFetcher } from "./koiosProvider";
 import { BlockfrostClient } from "./blockfrost";
 import type { Registration } from "./registration";
 
 /** Mọi nguồn dữ liệu chuỗi (Koios, Blockfrost/proxy) đều tuân theo giao diện này. */
 export interface ChainClient {
+  /** Current preprod chain tip */
+  getTip(): Promise<ChainTip>;
   getBalance(addresses: string[]): Promise<AssetBalance[]>;
   getHistory(address: string, limit?: number): Promise<TxSummary[]>;
   getProtocolParams(): Promise<Protocol>;
@@ -25,11 +27,11 @@ export interface Providers {
 }
 export type ProviderFactory = (network: NetworkName, settings: ProviderSettings) => Providers;
 
-/** Cấu hình người dùng: proxy Blockfrost dùng chung cho mọi mạng, hoặc chỉ cho mainnet. */
+/** Data source settings. Public Koios by default; optional Blockfrost preprod through the proxy (the API key lives in the proxy, read from an environment variable). */
 export interface ProviderSettings {
   /** Ví dụ https://wallet-proxy.example.com — proxy sẽ nhận /{mạng}/api/v0/... */
   proxyUrl?: string;
-  /** true: dùng Blockfrost qua proxy cho cả testnet (mặc định chỉ mainnet) */
+  /** true: use Blockfrost (preprod) through the proxy instead of Koios */
   proxyForTestnets?: boolean;
   /** true: testnet gọi Koios qua proxy của mình (bản web: Koios không có CORS cho POST) */
   koiosViaProxy?: boolean;
@@ -38,15 +40,13 @@ export interface ProviderSettings {
 export class ProviderError extends Error {}
 
 export const defaultProviders: ProviderFactory = (network, settings) => {
-  const cfg = NETWORKS[network];
-  const useProxy = cfg.defaultProvider.kind === "blockfrost-proxy" || (settings.proxyForTestnets && settings.proxyUrl);
-  if (useProxy) {
-    if (!settings.proxyUrl) throw new ProviderError(`Chưa cấu hình proxy dữ liệu cho ${cfg.label}`);
+  const cfg = NETWORKS[assertNetwork(network)];
+  if (settings.proxyForTestnets && settings.proxyUrl) {
     const base = `${settings.proxyUrl.replace(/\/+$/, "")}/${cfg.proxyPath}/api/v0`;
     const bf = new BlockfrostProvider(base);
     return { fetcher: bf, submitter: bf, chain: new BlockfrostClient(base, async () => castProtocol(await bf.fetchProtocolParameters() as any)) };
   }
-  const direct = (cfg.defaultProvider as { url: string }).url;
+  const direct = cfg.defaultProvider.url;
   const url = settings.koiosViaProxy && settings.proxyUrl ? `${settings.proxyUrl.replace(/\/+$/, "")}/koios/${cfg.proxyPath}/api/v1` : direct;
   const chain = new KoiosClient(network, undefined, url);
   const k = new KoiosFetcher(url, () => chain.getProtocolParams());
