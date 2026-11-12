@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Giao diện tối (mặc định). Giá trị "R G B" để Tailwind ghép độ trong suốt. Hệ thiết kế theo wallet-midnight, màu thương hiệu Cardano (xanh). */
+  :root {
+    --night-950: 7 11 24;
+    --night-900: 12 17 34;
+    --night-850: 17 24 46;
+    --night-800: 24 33 62;
+    --night-700: 36 48 88;
+    --night-600: 50 66 122;
+    --night-500: 78 98 168;
+    --moon: 214 224 255;
+    --moon-soft: 160 176 222;
+    --moon-dim: 115 132 183;
+    --ink: 255 255 255;
+    --accent: 59 130 246;
+    --accent-hover: 96 165 250;
+    --ok: 61 220 151;
+    --warn: 245 195 91;
+    --bad: 255 107 129;
+    --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+    --brand-hi: 147 197 253;
+    --brand-mid: 59 130 246;
+    --brand-deep: 29 78 216;
+    --on-accent: 255 255 255;
+    --card-1: 16 44 128;
+    --card-2: 30 80 210;
+    --card-3: 56 140 248;
+    --logo-hi: 147 197 253;
+    --logo-lo: 37 99 235;
+    color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --night-950: 244 247 253;
+    --night-900: 255 255 255;
+    --night-850: 236 242 252;
+    --night-800: 224 233 248;
+    --night-700: 205 219 242;
+    --night-600: 170 191 226;
+    --night-500: 110 135 185;
+    --moon: 25 40 80;
+    --moon-soft: 55 75 120;
+    --moon-dim: 100 120 160;
+    --ink: 10 20 50;
+    --accent: 29 78 216;
+    --accent-hover: 30 64 175;
+    --ok: 12 140 88;
+    --warn: 168 106 10;
+    --bad: 214 48 78;
+    --shadow-card: 0 1px 2px rgba(20, 40, 100, 0.06), 0 8px 24px -14px rgba(20, 40, 100, 0.25);
+    --on-accent: 255 255 255;
+    color-scheme: light;
+  }
+  html,
+  body {
+    @apply m-0 bg-night-950 text-moon antialiased;
+  }
+  body {
+    width: 360px;
+    height: 600px;
+    overflow: hidden;
+    font-size: 14px;
+  }
+  #root {
+    @apply h-full;
+  }
+  ::selection {
+    @apply bg-accent/40;
+  }
+  input,
+  textarea,
+  select {
+    @apply font-sans;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/70 ring-offset-2 ring-offset-night-950;
+  }
+}
+
+@layer components {
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.night.600') transparent;
+  }
+  .field {
+    @apply w-full rounded-xl border border-night-700 bg-night-900 px-3.5 py-2.5 text-[13px] text-moon placeholder:text-moon-dim/70 transition focus:border-accent/70 focus:outline-none focus:ring-2 focus:ring-accent/30;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-meteor-effect,
+  .animate-twinkle {
+    animation: none !important;
+  }
+}
+
+/* Bản web: khung điện thoại căn giữa, cao theo màn hình. */
+:root[data-layout='web'] body {
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  background: rgb(var(--night-950));
+}
+:root[data-layout='web'] #root {
+  width: 100%;
+  max-width: 420px;
+  height: 100%;
+  background: rgb(var(--night-950));
+}
+@media (min-width: 480px) {
+  :root[data-layout='web'] body { align-items: center; background: rgb(var(--night-900)); }
+  :root[data-layout='web'] #root {
+    height: min(720px, 100dvh - 32px);
+    border: 1px solid rgb(var(--night-700));
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+  }
+}

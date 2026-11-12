@@ -1,0 +1,17 @@
+{
+  "name": "wallet-cardano",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm test -w @wallet/core && npm test -w @wallet/extension && npm test -w @wallet/proxy",
+    "typecheck": "npm run typecheck -w @wallet/core && npm run typecheck -w @wallet/extension && npm run typecheck -w @wallet/proxy",
+    "build": "npm run build -w @wallet/extension",
+    "e2e": "npm run e2e -w @wallet/extension",
+    "proxy": "npm start -w @wallet/proxy",
+    "flow:setup": "node node_modules/tsx/dist/cli.mjs packages/core/scripts/preprod-flow.ts setup",
+    "flow:run": "node node_modules/tsx/dist/cli.mjs packages/core/scripts/preprod-flow.ts run",
+    "flow:status": "node node_modules/tsx/dist/cli.mjs packages/core/scripts/preprod-flow.ts status"
+  }
+}
