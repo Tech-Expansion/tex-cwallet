@@ -57,6 +57,7 @@ export type Req =
   | { type: "sharedExport"; id: string }
   | { type: "sharedRemove"; id: string }
   | { type: "sharedBalance"; id: string }
+  | { type: "sharedWalletBalance"; id: string }
   | { type: "sharedRegister"; id: string }
   | { type: "sharedPropose"; id: string; to: string; lovelace: string; memo?: string; password: string }
   | { type: "sharedRequests"; id: string }
@@ -193,6 +194,8 @@ export class WalletApi {
         return m.removeShared(req.id);
       case "sharedBalance":
         return m.sharedBalance(req.id);
+      case "sharedWalletBalance":
+        return serializeBalance(await m.sharedWalletBalance(req.id));
       case "sharedRegister":
         return m.registerShared(req.id);
       case "sharedPropose":

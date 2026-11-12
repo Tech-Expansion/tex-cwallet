@@ -52,6 +52,11 @@ export async function sharedKeyHash(words: string[], y: number, role: 0 | 2 = 0)
   return (await sharedKey(words, role, y).toPublic().hash()).hex();
 }
 
+/** Ed25519 public key (hex) of the multisig key — the only thing to share with other cosigners. */
+export function sharedPublicKey(words: string[], y: number, role: 0 | 2 = 0): string {
+  return sharedKey(words, role, y).toPublic().hex();
+}
+
 /** Ký giao dịch bằng khóa multisig (role 0, chỉ số y) → witness set CBOR chỉ chứa chữ ký đó. */
 export async function signWithSharedKey(words: string[], y: number, txCbor: string, role: 0 | 2 = 0): Promise<string> {
   const k = sharedKey(words, role, y);
@@ -71,6 +76,24 @@ export function toKeyHash(input: string): string {
     if (HEX56.test(h)) return h;
   } catch { /* lỗi chung bên dưới */ }
   throw new SharedError("INVALID_CONFIG", "Không nhận ra khóa cosigner (cần key hash 56 ký tự hex)");
+}
+
+/**
+ * A cosigner key needs only its public part (AI-7): 28-byte key hash (56 hex), 32-byte Ed25519 public key
+ * (64 hex, CIP-1854 m/1854'/1815'/0'/0/y) or an address with a payment key. Never accepts a private key.
+ */
+export async function cosignerKeyHash(input: string): Promise<string> {
+  const s = input.trim().toLowerCase();
+  if (/^(addr_shared_sk|addr_sk|addr_xsk|xprv|ed25519_sk|ed25519e_sk)1/.test(s) || /^[0-9a-f]{128}$/.test(s))
+    throw new SharedError("INVALID_CONFIG", "Đây là khóa bí mật! Chỉ nhập public key hoặc key hash của cosigner");
+  if (/^[0-9a-f]{64}$/.test(s)) {
+    try {
+      return (await Ed25519PublicKey.fromHex(s as never).hash()).hex();
+    } catch {
+      throw new SharedError("INVALID_CONFIG", "Public key không hợp lệ");
+    }
+  }
+  return toKeyHash(input);
 }
 
 export function buildPaymentScript(required: number, keyHashes: string[]): NativeScriptJson {
