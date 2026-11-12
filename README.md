@@ -171,6 +171,14 @@ More on **Gửi** (AI-23):
   character (up to 16 lines). The message is public on chain; the form says so. Before signing, the wallet checks
   that the transaction carries exactly this message and no other metadata.
 
+### Signing data for dApps and checking signatures
+
+When a dApp calls CIP-30 `signData`, the approval window shows the dApp origin, the signing address (bech32),
+the message as text when it is readable UTF-8 (hex otherwise, with the hex always available), and a warning
+when the payload parses as a Cardano transaction or transaction body. **Cài đặt → Xác minh chữ ký** checks a
+CIP-8 signature locally: paste the message (text or hex), the COSE_Sign1 and the COSE_Key, and optionally the
+address the key must belong to.
+
 ### Collateral for dApps
 
 **Cài đặt → Collateral cho dApp** creates the collateral that smart-contract dApps need: a preview, then a

@@ -26,7 +26,10 @@ export interface AppState {
   ipfsGateways?: string[];
   networks: NetInfo[];
 }
-export interface Approval { id: string; origin: string; kind: "enable" | "signTx" | "signData"; detail?: string }
+export interface Approval {
+  id: string; origin: string; kind: "enable" | "signTx" | "signData"; detail?: string;
+  signData?: { address: string; text?: string; hex: string; looksLikeTx: boolean };
+}
 
 export const fmtAda = (lovelace: string | bigint) => {
   const n = BigInt(lovelace);

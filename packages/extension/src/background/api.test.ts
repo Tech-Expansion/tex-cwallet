@@ -171,6 +171,25 @@ describe("WalletApi", () => {
     expect(await api.dapp("https://x.io", "signTx", [signedTx, true])).toMatch(/^[0-9a-f]+$/);
   });
 
+  it("AI-26: signData hiện địa chỉ, nội dung chữ, cảnh báo giao dịch; chữ ký xác minh được", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    api.onApprovalNeeded = (a) => void api.handle({ type: "resolveApproval", id: a.id, ok: true });
+    await api.dapp("https://x.io", "enable");
+    const me = ((await api.handle({ type: "account" })) as any).baseAddress as string;
+    const [payHex] = (await api.dapp("https://x.io", "getUsedAddresses")) as string[];
+    let seen: any;
+    api.onApprovalNeeded = (a) => { seen = a; void api.handle({ type: "resolveApproval", id: a.id, ok: true }); };
+    const payload = Buffer.from("Đăng nhập x.io", "utf8").toString("hex");
+    const sig: any = await api.dapp("https://x.io", "signData", [payHex, payload]);
+    expect(seen).toMatchObject({ origin: "https://x.io", kind: "signData", signData: { address: me, text: "Đăng nhập x.io", looksLikeTx: false } });
+    expect(await api.handle({ type: "verifySignature", payload: "Đăng nhập x.io", signature: sig.signature, key: sig.key, address: me })).toBe(true);
+    expect(await api.handle({ type: "verifySignature", payload: "khác", signature: sig.signature, key: sig.key })).toBe(false);
+    const { signedTx } = await api.manager.buildSendAda(me, 2_000_000n);
+    await api.dapp("https://x.io", "signData", [payHex, signedTx]);
+    expect(seen.signData.looksLikeTx).toBe(true);
+  });
+
   it("đổi ví/mạng hoặc khóa sẽ ngắt kết nối dApp", async () => {
     await api.handle({ type: "setup", password: PW });
     const w: any = await api.handle({ type: "addWallet", name: "A", mnemonic: M });

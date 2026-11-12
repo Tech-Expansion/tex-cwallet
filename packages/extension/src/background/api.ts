@@ -1,4 +1,4 @@
-import { summarizeTx, serializeBalance, serializeTxDetail, resolveImage, IPFS_GATEWAYS, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, inspectSignData, verifyDataSignature, type SignDataView, serializeBalance, serializeTxDetail, resolveImage, IPFS_GATEWAYS, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -11,6 +11,8 @@ export interface Approval {
   origin: string;
   kind: "enable" | "signTx" | "signData";
   detail?: string;
+  /** signData review (AI-26): signing address, text/hex payload, transaction-like warning */
+  signData?: SignDataView;
 }
 
 /** Payload CIP-30 là hex: hiện dạng chữ nếu là UTF-8 in được, nếu không thì hiện hex. */
@@ -45,6 +47,7 @@ export type Req =
   | { type: "balance" }
   | { type: "walletBalance" }
   | { type: "history"; limit?: number }
+  | { type: "verifySignature"; payload: string; payloadIsHex?: boolean; signature: string; key: string; address?: string }
   | { type: "collateralStatus" }
   | { type: "prepareCollateral" }
   | { type: "removeCollateral" }
@@ -189,6 +192,8 @@ export class WalletApi {
         return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
+      case "verifySignature":
+        return verifyDataSignature({ payload: String(req.payload ?? ""), payloadIsHex: req.payloadIsHex === true, signature: String(req.signature ?? ""), key: String(req.key ?? ""), address: req.address });
       case "collateralStatus": {
         const c = await m.collateralStatus();
         return { ...c, ...("lovelace" in c ? { lovelace: c.lovelace.toString() } : {}), protected: m.collateralProtected };
@@ -363,7 +368,8 @@ export class WalletApi {
         return api.signTx(params[0], !!params[1]);
       }
       case "signData": {
-        if (!(await this.ask({ origin, kind: "signData", detail: readable(params[1]) }))) throw new WalletError("LOCKED", "Người dùng từ chối ký");
+        const view = inspectSignData(params[0], params[1]);
+        if (!(await this.ask({ origin, kind: "signData", detail: readable(params[1]), signData: view }))) throw new WalletError("LOCKED", "Người dùng từ chối ký");
         return api.signData(params[0], params[1]);
       }
       case "submitTx":

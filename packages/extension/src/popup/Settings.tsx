@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookUser, ChevronRight, Eye, EyeOff, Lock, Plus, Trash2, Check } from "lucide-react";
+import { BookUser, ChevronRight, ShieldCheck, ShieldAlert, Eye, EyeOff, Lock, Plus, Trash2, Check } from "lucide-react";
 import { rpc, fmtAda, type AppState, type Approval } from "./rpc";
 import { useAction } from "./hooks";
 import { usePrefs, useT, type Lang, type ThemePref } from "./i18n";
@@ -38,6 +38,9 @@ export function Settings({ st, refresh, go }: { st: AppState; refresh: () => voi
           <Segmented<Lang> value={prefs.lang} onChange={(lang) => setPrefs({ lang })} options={[["vi", "Tiếng Việt"], ["en", "English"]] as const} />
         </div>
 
+        <button onClick={() => go("/verify")} className="flex w-full items-center gap-2.5 rounded-xl border border-night-800 bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-verify">
+          <ShieldCheck size={16} className="text-accent" /><span className="flex-1">{t("verify.title")}</span><ChevronRight size={15} className="text-moon-dim" />
+        </button>
         <button onClick={() => go("/contacts")} className="flex w-full items-center gap-2.5 rounded-xl border border-night-800 bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-contacts">
           <BookUser size={16} className="text-accent" /><span className="flex-1">{t("contacts.title")}</span><ChevronRight size={15} className="text-moon-dim" />
         </button>
@@ -119,7 +122,16 @@ export function Approve({ id }: { id: string }) {
       <TopBar title={title} />
       <div className="space-y-3 animate-fade-up">
         <Field label={t("approve.from")}><div className="rounded-xl border border-night-700 bg-night-900 px-3 py-2 font-mono text-[12px] text-ink" data-testid="origin">{a.origin}</div></Field>
-        {a.detail && <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-xl border border-night-700 bg-night-900 p-3 font-mono text-[11.5px] text-moon" data-testid="detail">{a.detail}</pre>}
+        {a.signData ? (
+          <>
+            <Field label={t("approve.signAddress")}><div className="break-all rounded-xl border border-night-700 bg-night-900 px-3 py-2 font-mono text-[11.5px] text-ink" data-testid="sign-address">{a.signData.address}</div></Field>
+            {a.signData.looksLikeTx && <Notice tone="warn"><span data-testid="sign-tx-warning">{t("approve.looksLikeTx")}</span></Notice>}
+            <Field label={a.signData.text !== undefined ? t("approve.payloadText") : t("approve.payloadHex")}>
+              <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap break-all rounded-xl border border-night-700 bg-night-900 p-3 font-mono text-[11.5px] text-moon" data-testid="detail">{a.signData.text ?? a.signData.hex}</pre>
+            </Field>
+            {a.signData.text !== undefined && <details className="text-[11px] text-moon-dim"><summary className="cursor-pointer">{t("approve.payloadHex")}</summary><div className="break-all font-mono">{a.signData.hex}</div></details>}
+          </>
+        ) : a.detail && <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-xl border border-night-700 bg-night-900 p-3 font-mono text-[11.5px] text-moon" data-testid="detail">{a.detail}</pre>}
         <Notice tone="warn">{t("approve.warn")}</Notice>
         <ErrorText error={resolve.error} />
       </div>
@@ -206,5 +218,37 @@ function Advanced({ st, refresh }: { st: AppState; refresh: () => void }) {
         </Field>
       )}
     </Card>
+  );
+}
+
+/** Check a CIP-8 signature someone sent (AI-26 AC-003). Runs locally, nothing is sent anywhere. */
+export function VerifySignature({ go }: { go: (r: string) => void }) {
+  const t = useT();
+  const [payload, setPayload] = useState("");
+  const [isHex, setIsHex] = useState(false);
+  const [signature, setSignature] = useState("");
+  const [key, setKey] = useState("");
+  const [address, setAddress] = useState("");
+  const [result, setResult] = useState<boolean>();
+  const check = useAction(async () => setResult(await rpc<boolean>({ type: "verifySignature", payload, payloadIsHex: isHex, signature, key, address: address.trim() || undefined })));
+  const reset = () => setResult(undefined);
+  return (
+    <Screen footer={<Button variant="primary" block loading={check.busy} disabled={!signature.trim() || !key.trim()} onClick={() => void check.run()} data-testid="verify-run">{t("verify.check")}</Button>}>
+      <TopBar title={t("verify.title")} onBack={() => go("/settings")} />
+      <div className="space-y-3 animate-fade-up">
+        <p className="text-[11.5px] text-moon-dim">{t("verify.hint")}</p>
+        <Field label={t("verify.payload")}><textarea className="field min-h-[60px] resize-none" value={payload} onChange={(e) => { setPayload(e.target.value); reset(); }} data-testid="verify-payload" /></Field>
+        <Checkbox checked={isHex} onChange={(v) => { setIsHex(v); reset(); }}>{t("verify.payloadIsHex")}</Checkbox>
+        <Field label="COSE_Sign1 (signature)"><textarea className="field min-h-[60px] resize-none font-mono text-[11px]" value={signature} onChange={(e) => { setSignature(e.target.value); reset(); }} data-testid="verify-signature" /></Field>
+        <Field label="COSE_Key (key)"><textarea className="field min-h-[48px] resize-none font-mono text-[11px]" value={key} onChange={(e) => { setKey(e.target.value); reset(); }} data-testid="verify-key" /></Field>
+        <Field label={t("verify.address")}><input className="field font-mono text-[11px]" value={address} onChange={(e) => { setAddress(e.target.value); reset(); }} placeholder="addr_test1… / stake_test1…" /></Field>
+        <ErrorText error={check.error} />
+        {result !== undefined && (
+          <div data-testid="verify-result" className={cx("flex items-center gap-2 rounded-xl border px-3 py-2.5 text-[13px] font-medium", result ? "border-ok/30 bg-ok/10 text-ok" : "border-bad/30 bg-bad/10 text-bad")}>
+            {result ? <ShieldCheck size={16} /> : <ShieldAlert size={16} />} {result ? t("verify.valid") : t("verify.invalid")}
+          </div>
+        )}
+      </div>
+    </Screen>
   );
 }
