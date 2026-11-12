@@ -123,3 +123,53 @@ describe("AI-5: gửi ADA", () => {
   });
 });
 
+describe("AI-6: gửi native token", () => {
+  it("AC-001: gửi một phần token: người nhận đúng lượng + ADA tối thiểu, phần còn lại và token khác về ví", async () => {
+    utxoAmounts = [[ada(5), tok(HOSKY, 100), tok(OTHER, 1)], [ada(8)]];
+    const p = await m.prepareSend({ to, assets: [{ unit: HOSKY, quantity: 30n }] });
+    const d = decode((m as any).pending.get(p.txHash).unsignedTx);
+    const r = d.outputs.find((o) => o.address === to)!;
+    expect([...r.assets]).toEqual([[HOSKY, 30n]]);
+    expect(r.coin).toBe(r.min); // exactly the required minimum ADA
+    expect(p.lovelace).toBe(r.min);
+    expect(p.minLovelace).toBe(r.min);
+    const back = new Map<string, bigint>();
+    for (const o of d.outputs.filter((o) => o.address === me)) for (const [u, q] of o.assets) back.set(u, (back.get(u) ?? 0n) + q);
+    expect(back.get(HOSKY)).toBe(70n);
+    expect(back.get(OTHER)).toBe(1n); // no token is lost
+    for (const [unit, q] of d.ins) expect(d.outs.get(unit)).toBe(q);
+    expect(p.change.assets).toEqual(expect.arrayContaining([{ unit: HOSKY, quantity: 70n }, { unit: OTHER, quantity: 1n }]));
+  });
+
+  it("AC-002: hai loại token trong cùng một giao dịch (kèm ADA tự chọn)", async () => {
+    utxoAmounts = [[ada(4), tok(HOSKY, 10)], [ada(4), tok(MIN, 7)], [ada(6)]];
+    const p = await m.prepareSend({ to, lovelace: 3_000_000n, assets: [{ unit: HOSKY, quantity: 10n }, { unit: MIN, quantity: 2n }] });
+    const d = decode((m as any).pending.get(p.txHash).unsignedTx);
+    const r = d.outputs.find((o) => o.address === to)!;
+    expect(r.coin).toBe(3_000_000n);
+    expect(Object.fromEntries(r.assets)).toEqual({ [HOSKY]: 10n, [MIN]: 2n });
+    for (const [unit, q] of d.ins) expect(d.outs.get(unit)).toBe(q);
+    expect(await m.confirmSend(p.txHash, PW)).toBe(p.txHash);
+  });
+
+  it("AC-003: không đủ token thì báo lỗi, không dựng / ký", async () => {
+    utxoAmounts = [[ada(10), tok(HOSKY, 5)]];
+    await expect(m.prepareSend({ to, assets: [{ unit: HOSKY, quantity: 6n }] })).rejects.toMatchObject({ code: "INSUFFICIENT_TOKENS" });
+    await expect(m.prepareSend({ to, assets: [{ unit: MIN, quantity: 1n }] })).rejects.toMatchObject({ code: "INSUFFICIENT_TOKENS" });
+    await expect(m.prepareSend({ to, assets: [{ unit: HOSKY, quantity: 0n }] })).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+    await expect(m.prepareSend({ to, assets: [{ unit: "xyz", quantity: 1n }] })).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+    expect((m as any).pending.size).toBe(0);
+    expect(submitted).toHaveLength(0);
+  });
+
+  it("verifySendTx chặn giao dịch bị sửa (đổi người nhận / số lượng)", async () => {
+    utxoAmounts = [[ada(20), tok(HOSKY, 50)]];
+    const prepared = await prepareSend({ req: { to, assets: [{ unit: HOSKY, quantity: 5n }] }, utxos: (await providers("preprod", {}).fetcher.fetchAddressUTxOs(me)) as never, changeAddress: me, params: PARAMS });
+    const { verifySendTx } = await import("./send");
+    const exp = { to, lovelace: prepared.preview.lovelace, assets: prepared.preview.assets, changeAddress: me };
+    expect(() => verifySendTx(prepared.unsignedTx, prepared.utxos, PARAMS, exp)).not.toThrow();
+    expect(() => verifySendTx(prepared.unsignedTx, prepared.utxos, PARAMS, { ...exp, assets: [{ unit: HOSKY, quantity: 6n }] })).toThrow(/Token/);
+    expect(() => verifySendTx(prepared.unsignedTx, prepared.utxos, PARAMS, { ...exp, to: me, changeAddress: to })).toThrow();
+    expect(() => verifySendTx(prepared.unsignedTx, [], PARAMS, exp)).toThrow(/input/);
+  });
+});
