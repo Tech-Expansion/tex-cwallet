@@ -404,16 +404,22 @@ describe("AI-13: preview the multisig address before creating it", () => {
     const kb = (await B.sharedKeyInfo(0)).keyHash, kc = (await C.sharedKeyInfo(0)).keyHash;
     const cosigners = [{ name: "Bình", keyHash: kb }, { name: "Chi", keyHash: kc }];
     const p = await A.previewShared({ required: 2, cosigners });
-    expect(p).toMatchObject({ required: 2, total: 3, exists: false });
+    expect(p).toMatchObject({ required: 2, total: 3, myIndex: 0 });
     expect(p.address).toMatch(/^addr_test1w/);
     expect(A.listShared()).toHaveLength(0); // nothing saved
     // key order does not change the address
     expect((await A.previewShared({ required: 2, cosigners: [...cosigners].reverse() })).address).toBe(p.address);
     // a CIP-1854 public key gives the same address as its key hash
     expect((await A.previewShared({ required: 2, cosigners: [{ name: "Bình", keyHash: sharedPublicKey(M[1]!.split(" "), 0) }, cosigners[1]!] })).address).toBe(p.address);
-    const w = await A.createShared({ name: "Quỹ", required: 2, cosigners });
+    const w = await A.createShared({ name: "Quỹ", required: 2, cosigners, myIndex: p.myIndex });
     expect(w.address).toBe(p.address);
-    expect((await A.previewShared({ required: 2, cosigners })).exists).toBe(true);
+    expect(w.myIndex).toBe(p.myIndex);
+    // the next preview uses my next unused key, so it is a different wallet; the same index gives the same one
+    const next = await A.previewShared({ required: 2, cosigners });
+    expect(next.myIndex).toBe(1);
+    expect(next.address).not.toBe(p.address);
+    expect((await A.previewShared({ required: 2, cosigners, myIndex: p.myIndex })).address).toBe(p.address);
+    await expect(A.createShared({ name: "Lại", required: 2, cosigners, myIndex: p.myIndex })).rejects.toThrow(/đã tồn tại/);
   });
 
   it("previewShared rejects bad settings like createShared", async () => {

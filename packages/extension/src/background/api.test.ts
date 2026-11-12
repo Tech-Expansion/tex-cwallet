@@ -159,7 +159,7 @@ describe("WalletApi – multisig", () => {
     expect(await A.handle({ type: "sharedCheckKey", input: kb.toUpperCase() })).toBe(kb);
     await expect(A.handle({ type: "sharedCheckKey", input: "ab".repeat(64) })).rejects.toThrow(/bí mật/);
     const preview: any = await A.handle({ type: "sharedPreview", required: 2, cosigners: [{ name: "B", keyHash: kb }] });
-    const w: any = await A.handle({ type: "sharedCreate", name: "Quỹ", required: 2, cosigners: [{ name: "B", keyHash: kb }] });
+    const w: any = await A.handle({ type: "sharedCreate", name: "Quỹ", required: 2, cosigners: [{ name: "B", keyHash: kb }], myIndex: preview.myIndex });
     expect(w.address).toBe(preview.address);
     expect(((await A.handle({ type: "sharedList" })) as any[]).length).toBe(1);
     const exported = (await A.handle({ type: "sharedExport", id: w.id })) as string;

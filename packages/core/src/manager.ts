@@ -448,10 +448,14 @@ export class WalletManager {
     return { w, owner };
   }
 
-  /** Address and script hash the wallet would get, before creating it (AI-13). Nothing is saved. */
-  async previewShared(p: { required: number; cosigners: Signer[]; myIndex?: number }): Promise<{ address: string; paymentScriptHash: string; required: number; total: number; exists: boolean }> {
+  /**
+   * Address and script hash the wallet would get, before creating it (AI-13). Nothing is saved.
+   * Returns the key index used for my key; pass it back to createShared so the created wallet is
+   * exactly the previewed one even if the next unused index changes in between.
+   */
+  async previewShared(p: { required: number; cosigners: Signer[]; myIndex?: number }): Promise<{ address: string; paymentScriptHash: string; required: number; total: number; myIndex: number }> {
     const { w } = await this.buildShared({ name: "", ...p });
-    return { address: w.address, paymentScriptHash: w.paymentScriptHash, required: w.required, total: w.signers.length, exists: this.sharedList().some((x) => x.id === w.id) };
+    return { address: w.address, paymentScriptHash: w.paymentScriptHash, required: w.required, total: w.signers.length, myIndex: w.myIndex! };
   }
 
   async createShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }): Promise<SharedEntry> {

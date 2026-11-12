@@ -142,7 +142,7 @@ function List({ st, go }: { st: AppState; go: (r: string) => void }) {
 }
 
 type CosignerRow = { name: string; key: string; hash?: string; error?: string };
-type Preview = { address: string; paymentScriptHash: string; required: number; total: number; exists: boolean };
+type Preview = { address: string; paymentScriptHash: string; required: number; total: number; myIndex: number };
 
 /** "Name key" lines (the old textarea format, or several keys pasted at once) -> rows. */
 const parseRows = (text: string): CosignerRow[] =>
@@ -196,14 +196,15 @@ function Create({ st, go, prefillKey }: { st: AppState; go: (r: string) => void;
   }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = useAction(async () => {
-    const w = await rpc<SharedWalletInfo>({ type: "sharedCreate", name, required: m, cosigners, myName: myName || undefined });
+    // Same key index as the preview, so the created address is the one the user saw and copied
+    const w = await rpc<SharedWalletInfo>({ type: "sharedCreate", name, required: m, cosigners, myIndex: preview!.myIndex, myName: myName || undefined });
     showToast(t("ms2.created"));
     go(`${walletRoute(w.id)}?created=1`);
   });
   const setRow = (i: number, patch: Partial<CosignerRow>) => setRows((cur) => cur.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   return (
-    <Screen footer={<Button variant="primary" block loading={create.busy} disabled={!preview || preview.exists} onClick={() => void create.run()} data-testid="ms-create-submit">{t("ms2.create")}</Button>}>
+    <Screen footer={<Button variant="primary" block loading={create.busy} disabled={!preview} onClick={() => void create.run()} data-testid="ms-create-submit">{t("ms2.create")}</Button>}>
       <TopBar title={t("ms2.create")} onBack={() => go("/multisig")} right={<NetworkPill net={netOf(st)} />} />
       <div className="space-y-4 animate-fade-up">
         <div className="space-y-2.5">
@@ -250,7 +251,6 @@ function Create({ st, go, prefillKey }: { st: AppState; go: (r: string) => void;
             <Card className="space-y-2 p-3" data-testid="ms-preview">
               <p className="text-[11.5px] text-moon-dim">{t("ms2.previewHint")}</p>
               <CopyField value={preview.address} testId="ms-preview-address" />
-              {preview.exists && <Notice tone="warn">{t("ms2.previewExists")}</Notice>}
             </Card>
           ) : <p className="text-[11.5px] text-moon-dim">{previewError || t("ms2.previewWaiting")}</p>}
         </div>
