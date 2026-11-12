@@ -174,6 +174,7 @@ describe("WalletApi – multisig", () => {
     expect(await B.handle({ type: "sharedDetect", input: req })).toEqual({ kind: "signRequest", walletId: w.id });
     expect(await B.handle({ type: "sharedDetect", input: kb })).toEqual({ kind: "cosignerKey", keyHash: kb });
     expect(((await B.handle({ type: "sharedReceive", request: req })) as any).merged).toBe(false);
+    expect(await B.handle({ type: "sharedPendingCount" })).toBe(1);
     const signed: any = await B.handle({ type: "sharedSign", request: req, password: PW });
     expect(signed.preview.enough).toBe(true);
     expect(await B.handle({ type: "sharedSubmit", request: signed.request })).toHaveLength(64);

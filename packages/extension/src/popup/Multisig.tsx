@@ -3,7 +3,7 @@ import { Check, ExternalLink, FileDown, Plus, Radar, Share2, ShieldCheck, Trash2
 import { rpc, fmtAda, parseAda, shorten, type AppState, type RequestItem, type SharedInput, type SharedWalletInfo, type TxPreview } from "./rpc";
 import { useAction } from "./hooks";
 import { useT } from "./i18n";
-import { Avatar, Button, Card, CopyField, ErrorText, Field, Notice, Screen, SectionLabel, ShareSheet, SignSheet, Spinner, TopBar, cx, showToast } from "./ui/ui";
+import { Avatar, Button, Card, Checkbox, CopyField, ErrorText, Field, Notice, Screen, SectionLabel, ShareSheet, SignSheet, Spinner, TopBar, cx, showToast } from "./ui/ui";
 import { NetworkPill, netOf } from "./Home";
 
 export const MESH_MULTISIG_URL = "https://multisig.meshjs.dev";
@@ -281,6 +281,31 @@ function Import({ go }: { go: (r: string) => void }) {
   );
 }
 
+/** "23h 05m" from slots (preprod: 1 slot = 1 second). */
+const fmtDuration = (slots: number) => {
+  const h = Math.floor(slots / 3600), m = Math.floor((slots % 3600) / 60);
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+};
+
+/** Who has signed a request and who has not (AI-14). */
+function SignerStatus({ signers, signedBy, myKey }: { signers: SharedWalletInfo["signers"]; signedBy: string[]; myKey: string }) {
+  const t = useT();
+  return (
+    <ul className="space-y-1" data-testid="ms-signer-status">
+      {signers.map((s, i) => {
+        const done = signedBy.includes(s.keyHash);
+        return (
+          <li key={s.keyHash} className="flex items-center gap-1.5 text-[11.5px]">
+            <span className={cx("grid h-4 w-4 place-items-center rounded-full", done ? "bg-ok/20 text-ok" : "bg-night-800 text-moon-dim")}>{done ? <Check size={10} /> : "·"}</span>
+            <span className={done ? "text-ink" : "text-moon-dim"}>{s.name || `Cosigner ${i + 1}`}{s.keyHash === myKey ? ` (${t("ms2.you")})` : ""}</span>
+            <span className="ml-auto text-[10.5px] text-moon-dim">{done ? t("ms2.signedShort") : t("ms2.waiting")}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function PreviewCard({ p, required, mine, own }: { p: TxPreview; required: number; mine?: boolean; own: string }) {
   const t = useT();
   return (
@@ -307,6 +332,7 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
   const [myKey, setMyKey] = useState("");
   const [reqs, setReqs] = useState<RequestItem[]>();
   const [share, setShare] = useState<{ title: string; value: string; filename: string; extra?: { label: string; value: string } }>();
+  const [autoSubmit, setAutoSubmit] = useState(true);
   const [signFor, setSignFor] = useState<{ kind: "propose" } | { kind: "sign"; request: string; preview: TxPreview } | undefined>();
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
@@ -333,7 +359,12 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
       await rpc<string>({ type: "sharedPropose", id, to: to.trim(), lovelace: lov.toString(), memo: memo || undefined, password });
       setTo(""); setAmt(""); setMemo("");
     } else {
-      await rpc({ type: "sharedSign", request: signFor.request, password });
+      const signed = await rpc<{ request: string; preview: TxPreview }>({ type: "sharedSign", request: signFor.request, password });
+      if (autoSubmit && signed.preview.enough) {
+        // Last required signature: submit right away instead of a second click (AI-14)
+        const h = await rpc<string>({ type: "sharedSubmit", request: signed.request });
+        showToast(t("ms2.submitted"), net.explorerTxUrl + h);
+      }
     }
     setSignFor(undefined);
     await reload();
@@ -408,6 +439,8 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
                     <Card className="space-y-2 p-3">
                       {r.memo && <div className="text-[12.5px] font-medium text-ink">{r.memo}</div>}
                       <PreviewCard p={r.preview} required={w.required} mine={r.iSigned} own={w.address} />
+                      <SignerStatus signers={w.signers} signedBy={r.preview.signedBy} myKey={myKey} />
+                      {r.slotsLeft !== undefined && !r.expired && <p className="text-[11px] text-moon-dim" data-testid="ms-time-left">{t("ms2.timeLeft", { t: fmtDuration(r.slotsLeft) })}</p>}
                       {r.stale && <Notice tone="warn">{t("ms2.stale")}</Notice>}
                       {r.expired && <Notice tone="warn">{t("ms2.expired")}</Notice>}
                       <div className="grid grid-cols-2 gap-2">
@@ -448,7 +481,14 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
         <SignSheet title={t("ms2.reviewTitle")} onSign={(pw) => void act.run(pw)} onCancel={() => setSignFor(undefined)} busy={act.busy} error={act.error}>
           {signFor.kind === "propose"
             ? <Card className="space-y-1 p-3"><div className="text-[22px] font-semibold tabular-nums text-ink">{amt} {net.unit}</div><div className="break-all font-mono text-[11.5px] text-moon">{to.trim()}</div></Card>
-            : <Card className="p-3"><PreviewCard p={signFor.preview} required={w.required} own={w.address} /></Card>}
+            : (
+              <>
+                <Card className="p-3"><PreviewCard p={signFor.preview} required={w.required} own={w.address} /></Card>
+                {new Set(signFor.preview.signedBy).size + 1 >= w.required && (
+                  <Checkbox checked={autoSubmit} onChange={setAutoSubmit}>{t("ms2.autoSubmit")}</Checkbox>
+                )}
+              </>
+            )}
         </SignSheet>
       )}
     </>

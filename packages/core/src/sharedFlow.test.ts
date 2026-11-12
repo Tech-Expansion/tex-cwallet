@@ -430,3 +430,32 @@ describe("AI-13: preview the multisig address before creating it", () => {
   });
 });
 
+describe("AI-14: request inbox", () => {
+  it("pendingActionCount counts requests I can sign and ones ready to submit", async () => {
+    const w = await createWallet();
+    await B.importShared(A.exportShared(w.id));
+    await C.importShared(A.exportShared(w.id));
+    expect(await A.pendingActionCount()).toBe(0);
+    const req = await A.proposeShared(w.id, DEST, 3_000_000n); // A signed, 1/2
+    expect(await A.pendingActionCount()).toBe(0); // nothing left for A to do
+    await B.receiveRequest(req);
+    expect(await B.pendingActionCount()).toBe(1); // B can sign
+    const signed = await B.signRequest(req, PW); // 2/2
+    expect(signed.preview.enough).toBe(true);
+    expect(await B.pendingActionCount()).toBe(1); // ready to submit
+    await B.submitRequest(signed.request);
+    expect(await B.pendingActionCount()).toBe(0);
+  });
+
+  it("listRequests reports the slots left before expiry", async () => {
+    const w = await createWallet();
+    await A.proposeShared(w.id, DEST, 3_000_000n);
+    expect((await A.listRequests(w.id))[0]!.slotsLeft).toBe(SHARED_TTL_SLOTS);
+    tipSlot += 3_600;
+    expect((await A.listRequests(w.id))[0]!.slotsLeft).toBe(SHARED_TTL_SLOTS - 3_600);
+    tipSlot = 1_000 + SHARED_TTL_SLOTS + 10;
+    const late = (await A.listRequests(w.id))[0]!;
+    expect(late).toMatchObject({ slotsLeft: 0, expired: true });
+  });
+});
+

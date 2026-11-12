@@ -70,6 +70,7 @@ export type Req =
   | { type: "sharedSubmit"; request: string }
   | { type: "sharedDismiss"; id: string; request: string }
   | { type: "sharedDetect"; input: string }
+  | { type: "sharedPendingCount" }
   | { type: "sharedReceive"; request: string }
   | { type: "pendingApprovals" }
   | { type: "resolveApproval"; id: string; ok: boolean };
@@ -134,6 +135,8 @@ export class WalletApi {
         return this.touch(req.password);
       case "unlock":
         await m.unlock(req.password);
+        // Find multisig wallets registered on-chain for my keys in the background (AI-14); offline is fine.
+        void m.discoverShared().catch(() => undefined);
         return this.touch(req.password);
       case "lock":
         m.lock();
@@ -222,6 +225,8 @@ export class WalletApi {
         return m.mergeRequests(req.a, req.b);
       case "sharedSubmit":
         return m.submitRequest(req.request);
+      case "sharedPendingCount":
+        return m.pendingActionCount();
       case "sharedDetect":
         return m.detectSharedInput(req.input);
       case "sharedReceive":

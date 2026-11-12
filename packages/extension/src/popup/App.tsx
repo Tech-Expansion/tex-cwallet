@@ -3,7 +3,7 @@ import { MotionConfig, motion } from "framer-motion";
 import { History, Settings as SettingsIcon, Users, Wallet as WalletIcon } from "lucide-react";
 import { I18nProvider, useT, type MessageKey } from "./i18n";
 import { useStatus, useWalletData } from "./hooks";
-import type { AppState } from "./rpc";
+import { rpc, type AppState } from "./rpc";
 import { Unlock, Welcome, WalletForm } from "./Onboarding";
 import { Activity, Dashboard, Receive, Send } from "./Home";
 import { Approve, Settings, Wallets } from "./Settings";
@@ -28,8 +28,22 @@ const NAV = [
   { route: "/settings", label: "nav.settings", icon: SettingsIcon },
 ] as const satisfies readonly { route: string; label: MessageKey; icon: unknown }[];
 
+/** Multisig requests that need me (AI-14), refreshed on navigation and every 30 seconds. */
+function usePendingMultisig(route: string) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const load = () => void rpc<number>({ type: "sharedPendingCount" }).then((v) => { if (live) setN(v); }).catch(() => undefined);
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => { live = false; clearInterval(timer); };
+  }, [route]);
+  return n;
+}
+
 function WithNav({ route, go, children }: { route: string; go: (r: string) => void; children: ReactNode }) {
   const t = useT();
+  const pending = usePendingMultisig(route);
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1">{children}</div>
@@ -42,6 +56,10 @@ function WithNav({ route, go, children }: { route: string; go: (r: string) => vo
               {active && <motion.span layoutId="nav-active" transition={{ type: "spring", bounce: 0.25, duration: 0.5 }} className="absolute inset-0 rounded-xl bg-accent/10 ring-1 ring-accent/25" />}
               <Icon size={19} className={cx("relative", active && "text-accent")} />
               <span className="relative">{t(label)}</span>
+              {r === "/multisig" && pending > 0 && (
+                <span data-testid="ms-badge" aria-label={t("ms2.pendingBadge", { n: String(pending) })}
+                  className="absolute right-[22%] top-0.5 grid min-w-[16px] place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-white">{pending}</span>
+              )}
             </button>
           );
         })}

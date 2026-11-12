@@ -413,6 +413,26 @@ export class WalletManager {
   }
 
   /** Khám phá ví multisig đã đăng ký on-chain (CIP-0146) có chứa khóa của ví đang dùng. */
+  /**
+   * Requests that need me, across this network's multisig wallets (AI-14): ones I can still sign, and
+   * ones with enough signatures to submit. Local only (no network), so it is cheap enough for a badge;
+   * expiry and stale UTxOs are checked when the wallet's request list is opened.
+   */
+  async pendingActionCount(): Promise<number> {
+    let n = 0;
+    for (const w of this.listShared()) {
+      if (w.myIndex === undefined) continue;
+      const mine = await this.myKeyHashes(w);
+      for (const r of this.state.requests?.[w.id] ?? []) {
+        try {
+          const p = await inspectSharedTx(w, r.tx);
+          if (p.enough || !p.signedBy.some((k) => mine.includes(k))) n++;
+        } catch { /* a request that no longer verifies is not counted */ }
+      }
+    }
+    return n;
+  }
+
   async discoverShared(): Promise<SharedEntry[]> {
     this.requireUnlocked();
     const owner = this.activeMnemonicId();
@@ -641,7 +661,7 @@ export class WalletManager {
    * Các yêu cầu ký đang theo dõi (kèm trạng thái chữ ký). Tự dọn: yêu cầu đã được gửi lên chuỗi thì bỏ đi;
    * yêu cầu có UTxO đã bị tiêu bởi giao dịch khác thì đánh dấu `stale` (không thể ký/gửi nữa).
    */
-  async listRequests(id: string): Promise<{ request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean }[]> {
+  async listRequests(id: string): Promise<{ request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean; slotsLeft?: number }[]> {
     const w = this.sharedById(id);
     const mine = await this.myKeyHashes(w);
     const stored = (this.state.requests?.[id] ?? []).slice().sort((a, b) => b.createdAt - a.createdAt);
@@ -662,7 +682,8 @@ export class WalletManager {
         continue;
       }
       const expired = preview.ttl === undefined || (slot !== undefined && slot >= preview.ttl);
-      out.push({ request: this.encodeRequest(r), memo: r.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale, expired });
+      const slotsLeft = preview.ttl !== undefined && slot !== undefined ? Math.max(0, preview.ttl - slot) : undefined;
+      out.push({ request: this.encodeRequest(r), memo: r.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale, expired, slotsLeft });
     }
     if (changed) await this.save();
     return out;
