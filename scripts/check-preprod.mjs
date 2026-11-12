@@ -4,6 +4,8 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
+process.chdir(execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim());
+
 const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .split("\0")
   .filter(Boolean)

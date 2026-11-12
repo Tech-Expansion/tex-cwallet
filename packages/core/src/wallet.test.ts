@@ -6,7 +6,7 @@ const TEST = "abandon abandon abandon abandon abandon abandon abandon abandon ab
 
 describe("mnemonic", () => {
   it("sinh 24 từ hợp lệ", () => {
-    const m = generateMnemonic(24);
+    const m = generateMnemonic();
     expect(m).toHaveLength(24);
     expect(validateMnemonic(m)).toBe(true);
   });

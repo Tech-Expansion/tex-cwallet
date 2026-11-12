@@ -42,7 +42,7 @@ export function WalletForm({ initial, needPassword, onDone, onBack }: { initial:
   const [text, setText] = useState("");
   const [ok, setOk] = useState(false);
 
-  const gen = useAction(async () => setWords(await rpc<string[]>({ type: "newMnemonic", words: 24 })));
+  const gen = useAction(async () => setWords(await rpc<string[]>({ type: "newMnemonic" })));
   useEffect(() => { if (mode === "new" && !words.length) void gen.run(); }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useAction(async () => {

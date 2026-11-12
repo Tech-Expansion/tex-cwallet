@@ -32,7 +32,7 @@ export type Req =
   | { type: "setup"; password: string }
   | { type: "unlock"; password: string }
   | { type: "lock" }
-  | { type: "newMnemonic"; words?: 12 | 15 | 24 }
+  | { type: "newMnemonic" }
   | { type: "addWallet"; name: string; mnemonic: string }
   | { type: "addWatch"; name: string; address: string }
   | { type: "removeWallet"; id: string }
@@ -131,7 +131,7 @@ export class WalletApi {
         m.lock();
         return this.session.set({});
       case "newMnemonic":
-        return m.newMnemonic(req.words);
+        return m.newMnemonic();
     }
     // Mọi thao tác dưới đây cần mở khóa
     if (!m.isUnlocked()) throw new WalletError("LOCKED", "Ví đang khóa");

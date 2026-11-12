@@ -2,7 +2,7 @@ import { MeshWallet, Transaction, deserializeAddress } from "@meshsdk/core";
 import { toValue, Address, resolveTxHash, Serialization } from "@meshsdk/core-cst";
 import { NETWORKS, DEFAULT_NETWORK, assertNetwork, UnsupportedNetworkError, type NetworkName } from "./networks";
 import { encrypt, decrypt, type EncryptedBlob } from "./vault";
-import { generateMnemonic, normalizeMnemonic, validateMnemonic } from "./mnemonic";
+import { generateMnemonic, normalizeMnemonic, checkMnemonic, describeMnemonicProblem } from "./mnemonic";
 import { deriveAccount, type DerivedAccount } from "./wallet";
 import type { AssetBalance, TxSummary } from "./koios";
 import { defaultProviders, type ProviderFactory, type ProviderSettings } from "./chain";
@@ -145,14 +145,16 @@ export class WalletManager {
   }
 
   // ---------- quản lý ví ----------
-  newMnemonic(words: 12 | 15 | 24 = 24) {
-    return generateMnemonic(words);
+  /** New mnemonic: always 24 words (AI-3). */
+  newMnemonic() {
+    return generateMnemonic();
   }
 
   async addWallet(name: string, mnemonic: string[] | string): Promise<WalletMeta> {
     const pw = this.requireUnlocked();
     const words = typeof mnemonic === "string" ? normalizeMnemonic(mnemonic) : mnemonic;
-    if (!validateMnemonic(words)) throw new WalletError("INVALID_MNEMONIC", "Mnemonic không hợp lệ");
+    const problem = checkMnemonic(words);
+    if (problem) throw new WalletError("INVALID_MNEMONIC", describeMnemonicProblem(problem));
     const first = await deriveAccount(words, this.state.network, 0);
     if (this.state.wallets.some((w) => w.kind === "mnemonic" && this.session.get(w.id)?.join(" ") === words.join(" ")))
       throw new WalletError("INVALID_MNEMONIC", "Ví này đã được thêm");
