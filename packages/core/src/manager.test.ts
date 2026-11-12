@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { checkSignature, deserializeAddress } from "@meshsdk/core";
 import { Serialization, addVKeyWitnessSetToTransaction, Address } from "@meshsdk/core-cst";
+import { DEFAULT_PROTOCOL_PARAMETERS } from "@meshsdk/common";
 import { summarizeTx, WalletManager, MemoryStore, KoiosClient, WalletError, type ProviderFactory } from "./index";
 
 const M = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -9,7 +10,7 @@ const PW = "correct-horse";
 
 let submitted: string[] = [];
 let utxoAddr = "";
-const factory: ProviderFactory = (network) => ({
+const factory: ProviderFactory = (network) => withParams({
   fetcher: {
     fetchAddressUTxOs: async (address: string) => [
       { input: { txHash: "a".repeat(64), outputIndex: 0 }, output: { address, amount: [{ unit: "lovelace", quantity: "50000000" }] } },
@@ -30,6 +31,12 @@ const factory: ProviderFactory = (network) => ({
     return { ok: false, status: 404 } as Response;
   }) as any),
 });
+
+/** Fake chain returning Mesh default protocol parameters (sending requires params). */
+function withParams<T extends { chain: any }>(p: T): T {
+  p.chain.getProtocolParams = async () => DEFAULT_PROTOCOL_PARAMETERS;
+  return p;
+}
 
 let store: MemoryStore;
 let m: WalletManager;
@@ -98,7 +105,7 @@ describe("WalletManager", () => {
     const w = await m.addWatchWallet("W", utxoAddr);
     await m.setActive(w.id);
     expect((await m.getBalance()).find((b) => b.unit === "lovelace")?.quantity).toBe("5000000");
-    await expect(m.sendAda(utxoAddr, 2_000_000n)).rejects.toBeInstanceOf(WalletError);
+    await expect(m.prepareSend({ to: utxoAddr, lovelace: 2_000_000n })).rejects.toBeInstanceOf(WalletError);
     await expect(m.addWatchWallet("bad", "addr1xyz")).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
   });
 
@@ -125,10 +132,12 @@ describe("WalletManager", () => {
     expect(m2.network).toBe("preprod");
   });
 
-  it("gửi ADA: build, ký, submit", async () => {
+  it("gửi ADA: xem trước, ký, submit", async () => {
     await ready();
     const to = (await new WalletManager(new MemoryStore(), factory).deriveFor(M2)).baseAddress;
-    const txHash = await m.sendAda(to, 3_000_000n);
+    const preview = await m.prepareSend({ to, lovelace: 3_000_000n });
+    expect(submitted).toHaveLength(0);
+    const txHash = await m.confirmSend(preview.txHash, PW);
     expect(txHash).toHaveLength(64);
     expect(submitted).toHaveLength(1);
     expect(submitted[0]).toMatch(/^[0-9a-f]+$/);
@@ -136,9 +145,9 @@ describe("WalletManager", () => {
 
   it("gửi ADA: validate đầu vào", async () => {
     await ready();
-    await expect(m.sendAda("addr1bad", 2_000_000n)).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
-    await expect(m.sendAda(utxoAddr, 10n)).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
-    await expect(m.sendAda(utxoAddr, 900_000_000n)).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
+    await expect(m.prepareSend({ to: "addr1bad", lovelace: 2_000_000n })).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+    await expect(m.prepareSend({ to: utxoAddr, lovelace: 10n })).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+    await expect(m.prepareSend({ to: utxoAddr, lovelace: 900_000_000n })).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
   });
 
   it("CIP-30: địa chỉ/utxo/balance dạng hex, signTx hoạt động", async () => {
@@ -156,7 +165,7 @@ describe("WalletManager", () => {
     const { signedTx } = await m.buildSendAda(to, 3_000_000n);
     const s = summarizeTx(signedTx);
     expect(s).toContain(to);
-    expect(s).toContain("3 ADA");
+    expect(s).toContain("3.000000 ADA");
     expect(s).toMatch(/Phí: 0\.\d+ ADA/);
     expect(summarizeTx("zz")).toContain("Không giải mã");
   });

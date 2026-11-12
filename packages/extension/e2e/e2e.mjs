@@ -82,18 +82,14 @@ try {
   await popup.getByRole("alert").waitFor();
   assert.match(await popup.getByRole("alert").innerText(), /addr_test1/);
   await shot(popup, "05-send");
-  // địa chỉ hợp lệ -> mở bảng ký, sai mật khẩu bị từ chối
+  // valid address but empty wallet -> no transaction is built, the sign sheet does not open (AI-5 AC-003)
   await popup.getByLabel("Địa chỉ nhận").fill(addr);
   await popup.getByRole("button", { name: "Xem lại" }).click();
-  await popup.getByRole("dialog").waitFor();
-  await popup.getByLabel("Mật khẩu ví").fill("sai-mat-khau");
-  await popup.getByRole("button", { name: "Ký & gửi" }).click();
-  await popup.getByRole("dialog").getByRole("alert").waitFor();
-  assert.match(await popup.getByRole("dialog").getByRole("alert").innerText(), /mật khẩu/i);
-  await shot(popup, "06-sign");
-  await popup.getByRole("button", { name: "Hủy" }).click();
+  await popup.getByRole("alert").filter({ hasText: /Không đủ ADA/ }).waitFor({ timeout: 20000 });
+  assert.equal(await popup.getByRole("dialog").count(), 0, "không được mở bảng ký khi không đủ tiền");
+  await shot(popup, "06-send-insufficient");
   await popup.getByRole("button", { name: "Quay lại" }).click();
-  log("validate form gửi + ký OK");
+  log("validate form gửi (địa chỉ sai, không đủ tiền) OK");
 
   // Multisig kiểu Eternl (CIP-1854/0146), dùng dữ liệu THẬT trên preprod qua Koios
   await popup.getByRole("button", { name: "Tab Multisig" }).click();

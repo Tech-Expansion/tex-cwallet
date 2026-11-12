@@ -1,18 +1,17 @@
 import { Serialization } from "@meshsdk/core-cst";
+import { formatAda } from "./balance";
 
-/** Tóm tắt dễ đọc của giao dịch để người dùng duyệt trước khi ký. */
+/** Human-readable transaction summary for the user to review before signing. Uses bigint, no floats. */
 export function summarizeTx(txCbor: string): string {
   try {
     const body = Serialization.Transaction.fromCbor(txCbor as any).body();
-    const outs = body.outputs();
-    const lines = outs.map((o, i) => {
+    const lines = body.outputs().map((o, i) => {
       const v = o.amount();
-      const ada = (Number(v.coin()) / 1e6).toFixed(6).replace(/\.?0+$/, "");
-      const tokens = v.multiasset()?.size ?? 0;
-      return `#${i + 1} → ${o.address().toBech32()}: ${ada} ADA${tokens ? ` + ${tokens} policy token` : ""}`;
+      const assets: string[] = [];
+      for (const [assetId, q] of v.multiasset() ?? new Map()) assets.push(`${BigInt(q)} ${String(assetId)}`);
+      return `#${i + 1} → ${o.address().toBech32()}: ${formatAda(BigInt(v.coin()))} ADA${assets.length ? ` + ${assets.join(", ")}` : ""}`;
     });
-    const fee = (Number(body.fee()) / 1e6).toString();
-    return [...lines, `Phí: ${fee} ADA`].join("\n");
+    return [...lines, `Phí: ${formatAda(BigInt(body.fee()))} ADA`].join("\n");
   } catch {
     return "Không giải mã được giao dịch. Chỉ ký nếu bạn tin tưởng trang này.";
   }

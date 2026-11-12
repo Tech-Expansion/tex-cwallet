@@ -25,7 +25,9 @@ export function useAction<A extends unknown[], R>(fn: (...a: A) => Promise<R>) {
   return { busy, error, run, setError };
 }
 
-export type Bal = { unit: string; quantity: string }[];
+/** Balance from the walletBalance RPC (bigints as strings) */
+export interface AssetRow { unit: string; policyId: string; assetNameHex: string; assetName?: string; quantity: string }
+export type Bal = { lovelace: string; ada: string; assets: AssetRow[] };
 export type Hist = { hash: string; blockTime: number; netLovelace: string }[];
 
 /** Số dư + lịch sử + địa chỉ của tài khoản đang dùng; tải lại khi đổi mạng/ví/account. */
@@ -40,7 +42,7 @@ export function useWalletData(st: AppState) {
     setError("");
     try {
       setAddr((await rpc<{ baseAddress: string }>({ type: "account" })).baseAddress);
-      const [b, h] = await Promise.all([rpc<Bal>({ type: "balance" }), rpc<Hist>({ type: "history", limit: 3 })]);
+      const [b, h] = await Promise.all([rpc<Bal>({ type: "walletBalance" }), rpc<Hist>({ type: "history", limit: 3 })]);
       setBal(b);
       setHist(h);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); }

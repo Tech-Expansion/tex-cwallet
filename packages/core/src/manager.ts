@@ -1,4 +1,4 @@
-import { MeshWallet, Transaction, deserializeAddress } from "@meshsdk/core";
+import { MeshWallet, deserializeAddress } from "@meshsdk/core";
 import { toValue, Address, resolveTxHash, Serialization } from "@meshsdk/core-cst";
 import { NETWORKS, DEFAULT_NETWORK, assertNetwork, UnsupportedNetworkError, type NetworkName } from "./networks";
 import { encrypt, decrypt, type EncryptedBlob } from "./vault";
@@ -13,6 +13,8 @@ import {
   scriptFromCbor, scriptHashOf, toKeyHash, keysOf, SharedError, type SharedWallet, type Signer, type TxPreview, type NativeScriptJson,
 } from "./shared";
 import { explainSubmitError } from "./koiosProvider";
+import { summarizeBalance, type WalletBalance } from "./balance";
+import { prepareSend, verifySendTx, minFeeFor, assertPreprodAddress, type SendRequest, type SendPreview, type PreparedSend } from "./send";
 import { buildRegistrationTx, parseRegistration, fromParts, registrationMetadata } from "./registration";
 
 export interface WalletMeta {
@@ -54,7 +56,8 @@ export interface SignRequest {
 const DISCOVER_GAP = 20; // CIP-1854: luôn xét 20 khóa liên tiếp chưa dùng
 const KEY = "wallet-state-v1";
 const MIN_PW = 8;
-const MIN_SEND = 1_000_000n; // ~min UTxO
+const PENDING_TTL_MS = 10 * 60_000; // a previewed transaction expires after 10 minutes
+const MIN_SEND = 1_000_000n; // multisig: at least 1 ADA
 
 export class WalletManager {
   private state: State = { wallets: [], activeAccount: 0, network: DEFAULT_NETWORK };
@@ -264,6 +267,14 @@ export class WalletManager {
     return this.p().chain.getBalance([a.baseAddress]);
   }
 
+  /**
+   * ADA balance (lovelace + 6 decimals) and each native asset (AI-4). The data source sums the address
+   * UTxO set (Koios utxo_set / Blockfrost /addresses); use balanceFromUtxos() when the UTxOs are at hand.
+   */
+  async getWalletBalance(): Promise<WalletBalance> {
+    return summarizeBalance(await this.getBalance());
+  }
+
   /** Preprod chain tip (AI-2 AC-002) */
   getTip() {
     return this.p().chain.getTip();
@@ -274,36 +285,62 @@ export class WalletManager {
     return this.p().chain.getHistory(a.baseAddress, limit);
   }
 
-  // ---------- gửi ADA ----------
-  /** Dựng + ký giao dịch gửi ADA, chưa submit. */
-  async buildSendAda(to: string, lovelace: bigint) {
-    this.assertAddress(to);
-    if (lovelace < MIN_SEND) throw new WalletError("INVALID_AMOUNT", "Tối thiểu 1 ADA");
-    const wallet = await this.meshWallet();
-    const utxos = await wallet.getUtxos();
-    const total = utxos.reduce((s, u) => s + BigInt(u.output.amount.find((x) => x.unit === "lovelace")?.quantity ?? 0), 0n);
-    if (total < lovelace + 200_000n) throw new WalletError("INSUFFICIENT_FUNDS", "Không đủ số dư");
-    // Phí tính theo tham số giao thức thật của preprod.
-    let params: Awaited<ReturnType<ReturnType<WalletManager["p"]>["chain"]["getProtocolParams"]>> | undefined;
-    try {
-      params = await this.p().chain.getProtocolParams();
-    } catch (e) {
-      void e; // AI-5 sẽ bắt buộc tham số giao thức thật
-    }
-    const tx = new Transaction({ initiator: wallet, params }).sendLovelace(to, lovelace.toString());
-    const unsigned = await tx.build();
-    const signed = await wallet.signTx(unsigned);
-    return { signedTx: signed };
+  // ---------- send ADA / native tokens (AI-5, AI-6) ----------
+  /** Built transactions waiting for the user to confirm the preview. Only these can be signed. */
+  private pending = new Map<string, PreparedSend & { walletId?: string; account: number; network: NetworkName; expires: number }>();
+
+  /**
+   * Step 1: build an unsigned transaction from the live protocol parameters and return a preview
+   * (amount, tokens, ADA carried, fee, change). Does not touch private keys.
+   */
+  async prepareSend(req: SendRequest): Promise<SendPreview> {
+    this.requireUnlocked();
+    const acc = await this.getAccount();
+    const w = this.getMeta(this.state.activeWalletId);
+    if (w.kind === "watch") throw new WalletError("NOT_FOUND", "Ví watch-only không thể gửi");
+    const { fetcher, chain } = this.p();
+    const params = await chain.getProtocolParams().catch(() => undefined);
+    const utxos = await fetcher.fetchAddressUTxOs(acc.baseAddress);
+    const prepared = await prepareSend({ req, utxos, changeAddress: acc.baseAddress, params, network: this.state.network });
+    this.pending.clear(); // keep only the latest preview
+    this.pending.set(prepared.preview.txHash, { ...prepared, walletId: this.state.activeWalletId, account: this.state.activeAccount, network: this.state.network, expires: Date.now() + PENDING_TTL_MS });
+    return prepared.preview;
   }
 
-  async sendAda(to: string, lovelace: bigint): Promise<string> {
-    const { signedTx } = await this.buildSendAda(to, lovelace);
+  /** Step 2: the user saw the preview and entered the password → sign exactly that transaction (by hash) and submit. */
+  async confirmSend(txHash: string, password: string): Promise<string> {
+    await this.verifyPassword(password);
+    const signedTx = await this.signPending(txHash);
     const wallet = await this.meshWallet();
     try {
-      return await wallet.submitTx(signedTx);
+      const h = await wallet.submitTx(signedTx);
+      this.pending.delete(txHash);
+      return h;
     } catch (e) {
       throw new WalletError("NOT_FOUND", this.submitErrorText(e));
     }
+  }
+
+  /** Sign a pending transaction (no submit). Used by confirmSend and tests. */
+  async signPending(txHash: string): Promise<string> {
+    const p = this.pending.get(txHash);
+    if (!p || p.expires < Date.now()) throw new WalletError("INVALID_TX", "Giao dịch xem trước không còn hiệu lực, hãy tạo lại");
+    if (p.walletId !== this.state.activeWalletId || p.account !== this.state.activeAccount || p.network !== this.state.network)
+      throw new WalletError("INVALID_TX", "Ví hoặc tài khoản đã đổi sau khi xem trước, hãy tạo lại");
+    const params = await this.p().chain.getProtocolParams();
+    // Re-check right before signing: balance, min-UTxO, the recipient and amounts that were previewed.
+    verifySendTx(p.unsignedTx, p.utxos, params, { to: p.preview.to, lovelace: p.preview.lovelace, assets: p.preview.assets, changeAddress: p.preview.change.address });
+    const wallet = await this.meshWallet();
+    const signed = await wallet.signTx(p.unsignedTx);
+    if (resolveTxHash(signed) !== txHash) throw new WalletError("INVALID_TX", "Nội dung giao dịch thay đổi khi ký");
+    if (BigInt(p.preview.fee) < minFeeFor(signed, params)) throw new WalletError("INVALID_TX", "Phí thấp hơn mức tối thiểu sau khi ký");
+    return signed;
+  }
+
+  /** Helper: build + sign an ADA payment (not submitted). */
+  async buildSendAda(to: string, lovelace: bigint) {
+    const preview = await this.prepareSend({ to, lovelace });
+    return { signedTx: await this.signPending(preview.txHash), preview };
   }
 
   /** Lỗi gửi giao dịch (Koios trả Error, Blockfrost có thể trả object) → thông báo dễ hiểu. */
@@ -684,14 +721,9 @@ export class WalletManager {
 
   /** The address must be a valid preprod address (addr_test1…); mainnet addresses are rejected. */
   assertAddress(addr: string) {
-    const cfg = NETWORKS[this.state.network];
-    try {
-      if (!addr.startsWith(cfg.addressPrefix)) throw 0;
-      if (deserializeAddress(addr).pubKeyHash === undefined && deserializeAddress(addr).scriptHash === undefined) throw 0;
-    } catch {
-      throw new WalletError("INVALID_ADDRESS", `Địa chỉ ${cfg.label} không hợp lệ (phải bắt đầu bằng ${cfg.addressPrefix})`);
-    }
+    assertPreprodAddress(addr, this.state.network);
   }
+
 }
 
 /** State stored by the old multi-network build (preview/mainnet) is rejected at startup. */
