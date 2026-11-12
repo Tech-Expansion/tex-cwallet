@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { BookUser, ChevronRight, Eye, EyeOff, Lock, Plus, Trash2, Check } from "lucide-react";
-import { rpc, type AppState, type Approval } from "./rpc";
+import { rpc, fmtAda, type AppState, type Approval } from "./rpc";
 import { useAction } from "./hooks";
 import { usePrefs, useT, type Lang, type ThemePref } from "./i18n";
-import { Avatar, Button, Card, Checkbox, ErrorText, Field, Notice, Screen, SectionLabel, Segmented, Spinner, TopBar, cx, showToast } from "./ui/ui";
+import { Avatar, Button, Card, Checkbox, ErrorText, Field, Notice, Screen, SectionLabel, Segmented, SignSheet, Spinner, TopBar, cx, showToast } from "./ui/ui";
 import { useEffect } from "react";
 
 export function Settings({ st, refresh, go }: { st: AppState; refresh: () => void; go: (r: string) => void }) {
@@ -41,6 +41,8 @@ export function Settings({ st, refresh, go }: { st: AppState; refresh: () => voi
         <button onClick={() => go("/contacts")} className="flex w-full items-center gap-2.5 rounded-xl border border-night-800 bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-contacts">
           <BookUser size={16} className="text-accent" /><span className="flex-1">{t("contacts.title")}</span><ChevronRight size={15} className="text-moon-dim" />
         </button>
+
+        {wallet?.kind === "mnemonic" && <Collateral st={st} />}
 
         <Advanced st={st} refresh={refresh} />
 
@@ -126,6 +128,50 @@ export function Approve({ id }: { id: string }) {
 }
 
 /** Optional Blockfrost preprod data proxy. */
+type CollateralRpc = { state: "none" | "pending" | "ready"; txHash?: string; lovelace?: string; protected: boolean };
+
+/** Collateral for dApps (AI-25): a 5 ADA UTxO to ourselves, kept out of normal sends while protected. */
+function Collateral({ st }: { st: AppState }) {
+  const t = useT();
+  const [c, setC] = useState<CollateralRpc>();
+  const [preview, setPreview] = useState<{ txHash: string; fee: string }>();
+  const load = useAction(async () => setC(await rpc<CollateralRpc>({ type: "collateralStatus" })));
+  useEffect(() => { void load.run(); }, [st.active.walletId, st.active.account]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prepare = useAction(async () => setPreview(await rpc<{ txHash: string; fee: string }>({ type: "prepareCollateral" })));
+  const sign = useAction(async (password: string) => {
+    await rpc({ type: "confirmSend", txHash: preview!.txHash, password });
+    setPreview(undefined);
+    showToast(t("collateral.created"));
+    await load.run();
+  });
+  const remove = useAction(async () => { if (confirm(t("collateral.removeConfirm"))) { await rpc({ type: "removeCollateral" }); await load.run(); } });
+  const protect = useAction(async (on: boolean) => { await rpc({ type: "setCollateralProtected", on }); await load.run(); });
+  const unit = st.networks.find((n) => n.name === st.network)!.unit;
+  return (
+    <Card className="space-y-2.5 p-3" data-testid="collateral">
+      <SectionLabel className="mb-0">{t("collateral.title")}</SectionLabel>
+      <p className="text-[11.5px] text-moon-dim">{t("collateral.hint")}</p>
+      {!c ? <Spinner size={18} /> : (
+        <>
+          <p className="text-[12.5px] text-ink" data-testid="collateral-state">
+            {c.state === "ready" ? t("collateral.ready", { ada: fmtAda(c.lovelace ?? "0"), unit }) : c.state === "pending" ? t("collateral.pending") : t("collateral.none")}
+          </p>
+          {c.state === "none" && <Button block loading={prepare.busy} onClick={() => void prepare.run()} data-testid="collateral-create">{t("collateral.create")}</Button>}
+          {c.state !== "none" && <Button block loading={remove.busy} onClick={() => void remove.run()}>{t("collateral.remove")}</Button>}
+          <Checkbox checked={c.protected} onChange={(v) => void protect.run(v)}>{t("collateral.protect")}</Checkbox>
+        </>
+      )}
+      <ErrorText error={load.error || prepare.error || remove.error || protect.error} />
+      {preview && (
+        <SignSheet title={t("collateral.sheet")} onSign={(pw) => void sign.run(pw)} onCancel={() => setPreview(undefined)} busy={sign.busy} error={sign.error}>
+          <p className="text-[12.5px] text-ink">{t("collateral.sheetBody", { unit })}</p>
+          <p className="text-[12px] text-moon">{t("send.fee")}: {fmtAda(preview.fee)} {unit}</p>
+        </SignSheet>
+      )}
+    </Card>
+  );
+}
+
 function Advanced({ st, refresh }: { st: AppState; refresh: () => void }) {
   const t = useT();
   const [url, setUrl] = useState(st.provider.proxyUrl ?? "");

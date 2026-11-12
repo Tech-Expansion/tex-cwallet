@@ -45,6 +45,10 @@ export type Req =
   | { type: "balance" }
   | { type: "walletBalance" }
   | { type: "history"; limit?: number }
+  | { type: "collateralStatus" }
+  | { type: "prepareCollateral" }
+  | { type: "removeCollateral" }
+  | { type: "setCollateralProtected"; on: boolean }
   | { type: "nftList"; refresh?: boolean }
   | { type: "setIpfsGateway"; gateway: string }
   | { type: "contactList" }
@@ -185,6 +189,16 @@ export class WalletApi {
         return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
+      case "collateralStatus": {
+        const c = await m.collateralStatus();
+        return { ...c, ...("lovelace" in c ? { lovelace: c.lovelace.toString() } : {}), protected: m.collateralProtected };
+      }
+      case "prepareCollateral":
+        return serializeSendPreview(await m.prepareCollateral());
+      case "removeCollateral":
+        return m.removeCollateral();
+      case "setCollateralProtected":
+        return m.setCollateralProtected(req.on === true);
       case "nftList": {
         // Image URLs are resolved here, against the allowlist the CSP also enforces (AI-24 AC-002).
         const gw = m.ipfsGateway;
@@ -341,7 +355,7 @@ export class WalletApi {
       case "getRewardAddresses":
         return api.getRewardAddresses();
       case "getCollateral":
-        return api.getCollateral();
+        return api.getCollateral(params[0]);
       case "getExtensions":
         return [];
       case "signTx": {

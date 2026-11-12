@@ -1,5 +1,6 @@
 import { MeshWallet, deserializeAddress } from "@meshsdk/core";
-import { toValue, Address, resolveTxHash, Serialization } from "@meshsdk/core-cst";
+import type { UTxO } from "@meshsdk/core";
+import { toValue, toTxUnspentOutput, Address, resolveTxHash, Serialization } from "@meshsdk/core-cst";
 import { NETWORKS, DEFAULT_NETWORK, assertNetwork, UnsupportedNetworkError, type NetworkName } from "./networks";
 import { encrypt, decrypt, type EncryptedBlob } from "./vault";
 import { generateMnemonic, normalizeMnemonic, checkMnemonic, describeMnemonicProblem } from "./mnemonic";
@@ -40,6 +41,10 @@ interface State {
   sharedHidden?: Record<string, string[]>;
   requests?: Record<string, SignRequest[]>;
   providerSettings?: ProviderSettings;
+  /** Collateral UTxO per `${walletId}:${account}` (AI-25) */
+  collateral?: Record<string, { txHash: string; outputIndex: number }>;
+  /** false = collateral may be spent by normal sends (default: protected) */
+  collateralProtected?: boolean;
   /** IPFS gateway for NFT images (AI-24), one of IPFS_GATEWAYS */
   ipfsGateway?: string;
   /** Address book (AI-22): local only */
@@ -74,6 +79,14 @@ const KEY = "wallet-state-v1";
 const MIN_PW = 8;
 const PENDING_TTL_MS = 10 * 60_000; // a previewed transaction expires after 10 minutes
 const MIN_SEND = 1_000_000n; // multisig: at least 1 ADA
+/** Collateral UTxO size: 5 ADA covers any preprod script transaction (collateral = 150% of the fee) */
+export const COLLATERAL_LOVELACE = 5_000_000n;
+
+export type CollateralStatus =
+  | { state: "none" }
+  /** created but not seen on chain yet (or spent): wait, or remove and create again */
+  | { state: "pending"; txHash: string }
+  | { state: "ready"; txHash: string; outputIndex: number; lovelace: bigint };
 /** Multisig proposals expire after 24 hours (preprod: 1 slot = 1 second). Expired ones must be proposed again. */
 export const SHARED_TTL_SLOTS = 24 * 3600;
 
@@ -403,7 +416,60 @@ export class WalletManager {
 
   // ---------- send ADA / native tokens (AI-5, AI-6) ----------
   /** Built transactions waiting for the user to confirm the preview. Only these can be signed. */
-  private pending = new Map<string, PreparedSend & { walletId?: string; account: number; network: NetworkName; expires: number }>();
+  private pending = new Map<string, PreparedSend & { walletId?: string; account: number; network: NetworkName; expires: number; collateral?: boolean }>();
+
+  // ---------- collateral (AI-25) ----------
+  private get collateralKey() {
+    return `${this.state.activeWalletId}:${this.state.activeAccount}`;
+  }
+
+  get collateralProtected() {
+    return this.state.collateralProtected !== false;
+  }
+
+  async setCollateralProtected(on: boolean) {
+    this.requireUnlocked();
+    this.state.collateralProtected = !!on;
+    await this.save();
+  }
+
+  /** The collateral of the active account, checked against the live UTxO set: ADA only, unspent. */
+  async collateralStatus(utxos?: UTxO[]): Promise<CollateralStatus> {
+    this.requireUnlocked();
+    const ref = this.state.collateral?.[this.collateralKey];
+    if (!ref) return { state: "none" };
+    const list = utxos ?? (await this.p().fetcher.fetchAddressUTxOs((await this.getAccount()).baseAddress));
+    const u = list.find((x) => x.input.txHash === ref.txHash && x.input.outputIndex === ref.outputIndex);
+    const onlyAda = u && u.output.amount.every((a) => a.unit === "lovelace" || a.unit === "");
+    if (!u || !onlyAda) return { state: "pending", txHash: ref.txHash };
+    return { state: "ready", txHash: ref.txHash, outputIndex: ref.outputIndex, lovelace: BigInt(u.output.amount.find((a) => a.unit === "lovelace" || a.unit === "")!.quantity) };
+  }
+
+  /** AC-001: build (not sign) a 5 ADA payment to ourselves; confirmSend then records output #0 as the collateral. */
+  async prepareCollateral(): Promise<SendPreview> {
+    if ((await this.collateralStatus()).state === "ready") throw new WalletError("INVALID_TX", "Tài khoản này đã có collateral");
+    const me = (await this.getAccount()).baseAddress;
+    const preview = await this.prepareSend({ outputs: [{ to: me, lovelace: COLLATERAL_LOVELACE }] });
+    const p = this.pending.get(preview.txHash)!;
+    const out0 = Serialization.Transaction.fromCbor(p.unsignedTx as never).body().outputs()[0]!;
+    if (out0.address().toBech32() !== me || BigInt(out0.amount().coin()) !== COLLATERAL_LOVELACE || out0.amount().multiasset()?.size)
+      throw new WalletError("INVALID_TX", "Output collateral không đúng 5 ADA về chính ví");
+    p.collateral = true;
+    return preview;
+  }
+
+  /** Stop treating the UTxO as collateral (it stays in the wallet as normal ADA). */
+  async removeCollateral() {
+    this.requireUnlocked();
+    if (this.state.collateral) delete this.state.collateral[this.collateralKey];
+    await this.save();
+  }
+
+  /** UTxOs a normal send may spend: all but the collateral while it is protected (AC-003). */
+  private spendable(utxos: UTxO[]): UTxO[] {
+    const ref = this.collateralProtected ? this.state.collateral?.[this.collateralKey] : undefined;
+    return ref ? utxos.filter((u) => !(u.input.txHash === ref.txHash && u.input.outputIndex === ref.outputIndex)) : utxos;
+  }
 
   /**
    * Step 1: build an unsigned transaction from the live protocol parameters and return a preview
@@ -416,7 +482,7 @@ export class WalletManager {
     if (w.kind === "watch") throw new WalletError("NOT_FOUND", "Ví watch-only không thể gửi");
     const { fetcher, chain } = this.p();
     const params = await chain.getProtocolParams().catch(() => undefined);
-    const utxos = await fetcher.fetchAddressUTxOs(acc.baseAddress);
+    const utxos = this.spendable(await fetcher.fetchAddressUTxOs(acc.baseAddress));
     const prepared = await prepareSend({ req, utxos, changeAddress: acc.baseAddress, params, network: this.state.network });
     this.pending.clear(); // keep only the latest preview
     this.pending.set(prepared.preview.txHash, { ...prepared, walletId: this.state.activeWalletId, account: this.state.activeAccount, network: this.state.network, expires: Date.now() + PENDING_TTL_MS });
@@ -430,7 +496,12 @@ export class WalletManager {
     const wallet = await this.meshWallet();
     try {
       const h = await wallet.submitTx(signedTx);
+      const p = this.pending.get(txHash);
       this.pending.delete(txHash);
+      if (p?.collateral) {
+        (this.state.collateral ??= {})[`${p.walletId}:${p.account}`] = { txHash, outputIndex: 0 };
+        await this.save();
+      }
       return h;
     } catch (e) {
       throw new WalletError("NOT_FOUND", this.submitErrorText(e));
@@ -955,7 +1026,20 @@ export class WalletManager {
       getUnusedAddresses: () => w.getUnusedAddressesHex(),
       getChangeAddress: () => w.getChangeAddressHex(),
       getRewardAddresses: () => w.getRewardAddressesHex(),
-      getCollateral: () => w.getCollateralHex(),
+      // CIP-30 getCollateral: only the designated ADA-only UTxO (AI-25). null when there is none or it is
+      // smaller than the amount asked; an amount above 5 ADA is refused.
+      getCollateral: async (params?: { amount?: string }) => {
+        let want = COLLATERAL_LOVELACE;
+        if (params?.amount !== undefined) {
+          try { want = BigInt(Serialization.Value.fromCbor(String(params.amount) as never).coin()); } catch { throw new WalletError("INVALID_TX", "amount không phải CBOR Coin hợp lệ"); }
+        }
+        if (want > COLLATERAL_LOVELACE) throw new WalletError("INVALID_TX", "Collateral yêu cầu vượt quá 5 ADA");
+        const st = await this.collateralStatus();
+        if (st.state !== "ready" || st.lovelace < want) return null;
+        const utxos = await this.p().fetcher.fetchAddressUTxOs((await this.getAccount()).baseAddress);
+        const u = utxos.find((x) => x.input.txHash === st.txHash && x.input.outputIndex === st.outputIndex)!;
+        return [toTxUnspentOutput(u).toCbor() as string];
+      },
       // CIP-30: signTx trả về WITNESS SET (CBOR), dApp tự ghép vào giao dịch. Trả cả giao dịch sẽ làm dApp hỏng.
       signTx: (tx: string, partial = false) => w.signTx(tx, partial, false),
       // CIP-30: địa chỉ và payload đều ở dạng hex. MeshWallet cần địa chỉ bech32; payload hex dùng nguyên.

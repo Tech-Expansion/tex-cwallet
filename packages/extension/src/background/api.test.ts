@@ -94,6 +94,19 @@ describe("WalletApi", () => {
     await expect(api.handle({ type: "setIpfsGateway", gateway: "https://evil.example" })).rejects.toThrow();
   });
 
+  it("AI-25: collateral qua RPC; dApp getCollateral = null khi chưa có", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    expect(await api.handle({ type: "collateralStatus" })).toEqual({ state: "none", protected: true });
+    const p: any = await api.handle({ type: "prepareCollateral" });
+    expect(p.recipients[0].lovelace).toBe("5000000");
+    await api.handle({ type: "confirmSend", txHash: p.txHash, password: PW });
+    expect(await api.handle({ type: "collateralStatus" })).toMatchObject({ state: "pending", txHash: p.txHash });
+    await api.handle({ type: "setCollateralProtected", on: false });
+    expect(((await api.handle({ type: "collateralStatus" })) as any).protected).toBe(false);
+    expect(await (await api.manager.cip30()).getCollateral()).toBeNull();
+  });
+
   it("thao tác khi khóa bị từ chối; không lộ ví trong state", async () => {
     await api.handle({ type: "setup", password: PW });
     await api.handle({ type: "addWallet", name: "A", mnemonic: M });
