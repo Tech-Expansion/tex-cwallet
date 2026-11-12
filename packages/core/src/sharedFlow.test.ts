@@ -46,6 +46,7 @@ const providers: ProviderFactory = () => ({
     listAddressTxs: async () => [],
     getTxs: async () => [],
     assetAddresses: async () => [],
+    getNftMetadata: async () => ({}),
     getProtocolParams: async () => DEFAULT_PROTOCOL_PARAMETERS,
     findRegistrations: async (creds: string[]) => onChain.filter((r) => JSON.stringify(r.payment).split('"').some((x) => creds.includes(x))),
     txExists: async (h: string) => landed.has(h),

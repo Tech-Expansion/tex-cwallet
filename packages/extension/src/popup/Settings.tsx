@@ -151,6 +151,14 @@ function Advanced({ st, refresh }: { st: AppState; refresh: () => void }) {
       <Checkbox checked={forTest} onChange={setForTest}>{t("settings.proxyTestnet")}</Checkbox>
       <ErrorText error={save.error} />
       <Button block loading={save.busy} onClick={() => void save.run()}>{t("settings.proxySave")}</Button>
+      {st.ipfsGateways && (
+        <Field label={t("settings.ipfsGateway")} hint={t("settings.ipfsGatewayHint")}>
+          <select className="field" value={st.ipfsGateway} data-testid="ipfs-gateway"
+            onChange={(e) => void rpc({ type: "setIpfsGateway", gateway: e.target.value }).then(() => { showToast(t("settings.saved")); refresh(); })}>
+            {st.ipfsGateways.map((g) => <option key={g} value={g}>{g.replace("https://", "")}</option>)}
+          </select>
+        </Field>
+      )}
     </Card>
   );
 }

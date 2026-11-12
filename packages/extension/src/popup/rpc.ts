@@ -22,6 +22,8 @@ export interface AppState {
   active: { walletId?: string; account: number };
   network: NetName;
   provider: { proxyUrl?: string; proxyForTestnets?: boolean };
+  ipfsGateway?: string;
+  ipfsGateways?: string[];
   networks: NetInfo[];
 }
 export interface Approval { id: string; origin: string; kind: "enable" | "signTx" | "signData"; detail?: string }

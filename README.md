@@ -171,6 +171,18 @@ More on **Gửi** (AI-23):
   character (up to 16 lines). The message is public on chain; the form says so. Before signing, the wallet checks
   that the transaction carries exactly this message and no other metadata.
 
+### NFTs
+
+**NFT** on the dashboard opens a gallery of the account's NFTs (tokens with quantity 1 and CIP-68 user tokens).
+Metadata comes from CIP-25 (label 721 of the mint) or the CIP-68 reference datum and is cached locally for 7
+days (the refresh button reloads it). Tap an NFT for its description, policy, attributes and files, and
+**Gửi NFT này** to open Gửi with it filled in. The wallet only shows and transfers NFTs: no prices, no trading.
+
+Images are shown only with `<img>`; HTML from metadata is never rendered. `ipfs://` links and bare CIDs load
+through the IPFS gateway chosen in **Cài đặt → Nâng cao** (ipfs.io, dweb.link, Pinata or nftstorage.link);
+`ar://` through arweave.net; image `data:` URIs are allowed. Any other host is blocked by the extension CSP
+(`img-src`, also set in `web.html`), and a test keeps that CSP equal to the gateway list in `core/src/nft.ts`.
+
 ### Address book and ADA Handle
 
 **Cài đặt → Sổ địa chỉ** keeps contacts (name, preprod address, optional note). They are stored only in this

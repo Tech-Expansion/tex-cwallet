@@ -2,6 +2,7 @@ import { castProtocol } from "@meshsdk/common";
 import type { Protocol } from "@meshsdk/core";
 import { NETWORKS, type NetworkName } from "./networks";
 import type { RawIO, RawTx, TxRef } from "./history";
+import { cip25Entry, cip68FromDatum, splitUnit, CIP68_NFT_LABEL, CIP68_REF_LABEL, type RawNftMetadata } from "./nft";
 import { parseRegistration, registrationHasKey, REGISTRATION_LABEL, type Registration } from "./registration";
 
 export interface TxSummary {
@@ -117,6 +118,31 @@ export class KoiosClient {
         for (const a of utxo.asset_list ?? []) add(a.policy_id + a.asset_name, a.quantity);
     }
     return [...totals].map(([unit, q]) => ({ unit, quantity: q.toString() }));
+  }
+
+  /**
+   * asset_info in batches of 50. CIP-25 comes from the latest mint's label 721; for a CIP-68 user token the
+   * (100) reference token is asked for too and its datum gives the metadata.
+   */
+  async getNftMetadata(units: string[]): Promise<Record<string, RawNftMetadata>> {
+    const refOf = (u: string) => { const s = splitUnit(u); return s.label === CIP68_NFT_LABEL ? s.policyId + CIP68_REF_LABEL + s.nameHex : undefined; };
+    const ask = [...new Set(units.flatMap((u) => [u, refOf(u)].filter((x): x is string => !!x)))];
+    const info = new Map<string, any>();
+    for (let i = 0; i < ask.length; i += 50) {
+      const rows = await this.post<any[]>("/asset_info", { _asset_list: ask.slice(i, i + 50).map((u) => [u.slice(0, 56), u.slice(56)]) });
+      for (const r of rows) info.set(r.policy_id + r.asset_name, r);
+    }
+    const datumOf = (c: any) => (c && typeof c === "object" ? (c["100"] ?? c) : undefined);
+    const out: Record<string, RawNftMetadata> = {};
+    for (const u of units) {
+      const r = info.get(u);
+      const ref = refOf(u);
+      const cip68 = ref ? cip68FromDatum(datumOf(info.get(ref)?.cip68_metadata) ?? datumOf(r?.cip68_metadata)) : undefined;
+      const { policyId, nameHex } = splitUnit(u);
+      const cip25 = !ref ? cip25Entry(r?.minting_tx_metadata?.["721"], policyId, nameHex) : undefined;
+      if (cip68 || cip25) out[u] = { ...(cip68 ? { cip68 } : {}), ...(cip25 ? { cip25 } : {}) };
+    }
+    return out;
   }
 
   async assetAddresses(unit: string): Promise<string[]> {

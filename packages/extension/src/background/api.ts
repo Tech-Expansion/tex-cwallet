@@ -1,4 +1,4 @@
-import { summarizeTx, serializeBalance, serializeTxDetail, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeBalance, serializeTxDetail, resolveImage, IPFS_GATEWAYS, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -45,6 +45,8 @@ export type Req =
   | { type: "balance" }
   | { type: "walletBalance" }
   | { type: "history"; limit?: number }
+  | { type: "nftList"; refresh?: boolean }
+  | { type: "setIpfsGateway"; gateway: string }
   | { type: "contactList" }
   | { type: "contactSave"; id?: string; name: string; address: string; note?: string }
   | { type: "contactRemove"; id: string }
@@ -132,6 +134,8 @@ export class WalletApi {
           active: m.active,
           network: m.network,
           provider: m.providerSettings,
+          ipfsGateway: m.ipfsGateway,
+          ipfsGateways: IPFS_GATEWAYS,
           networks: Object.values(NETWORKS).map((n) => ({
             name: n.name, label: n.label, faucetUrl: n.faucetUrl, explorerTxUrl: n.explorerTxUrl,
             unit: n.unit, addressPrefix: n.addressPrefix,
@@ -181,6 +185,16 @@ export class WalletApi {
         return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
+      case "nftList": {
+        // Image URLs are resolved here, against the allowlist the CSP also enforces (AI-24 AC-002).
+        const gw = m.ipfsGateway;
+        return (await m.listNfts(req.refresh === true)).map((n) => ({
+          ...n,
+          imageUrl: resolveImage(n.image, gw) ?? resolveImage(n.files.find((f) => /^image\//.test(f.mediaType ?? ""))?.src, gw),
+        }));
+      }
+      case "setIpfsGateway":
+        return m.setIpfsGateway(req.gateway);
       case "contactList":
         return m.listContacts();
       case "contactSave":
