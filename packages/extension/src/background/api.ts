@@ -185,6 +185,7 @@ export class WalletApi {
       case "exportMnemonic":
         return m.exportMnemonic(req.id, req.password);
       case "sharedList":
+        await m.adoptLocalShared(); // multisig wallets another wallet on this device already holds
         return m.listShared();
       case "sharedKey":
         return m.sharedKeyInfo(req.y);
@@ -226,6 +227,7 @@ export class WalletApi {
       case "sharedSubmit":
         return m.submitRequest(req.request);
       case "sharedPendingCount":
+        await m.adoptLocalShared();
         return m.pendingActionCount();
       case "sharedDetect":
         return m.detectSharedInput(req.input);

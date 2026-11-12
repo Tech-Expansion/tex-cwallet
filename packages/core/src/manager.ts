@@ -33,6 +33,8 @@ interface State {
   activeAccount: number;
   network: NetworkName;
   shared?: SharedEntry[];
+  /** Multisig wallet ids a wallet removed on purpose: not adopted again from other local wallets */
+  sharedHidden?: Record<string, string[]>;
   requests?: Record<string, SignRequest[]>;
   providerSettings?: ProviderSettings;
   /** Xác minh mật khẩu */
@@ -203,6 +205,7 @@ export class WalletManager {
     this.session.delete(id);
     // Its multisig wallets go with it; requests stay while another wallet still holds the multisig wallet
     this.state.shared = this.sharedList().filter((x) => x.ownerWalletId !== id);
+    if (this.state.sharedHidden) delete this.state.sharedHidden[id];
     for (const rid of Object.keys(this.state.requests ?? {})) if (!this.state.shared.some((x) => x.id === rid)) delete this.state.requests![rid];
     if (this.state.activeWalletId === id) {
       this.state.activeWalletId = this.state.wallets[0]?.id;
@@ -380,6 +383,29 @@ export class WalletManager {
     const owner = this.multisigOwner();
     return this.sharedList().filter((w) => w.network === this.state.network && w.ownerWalletId === owner);
   }
+  /**
+   * Add to the active wallet the multisig wallets that other wallets on this device hold and that
+   * include one of the active wallet's CIP-1854 keys (AI-15). Local only, no network. Sign requests are
+   * already shared per multisig wallet, so pending requests show up at once.
+   */
+  async adoptLocalShared(): Promise<SharedEntry[]> {
+    const owner = this.multisigOwner();
+    if (!owner || !this.unlocked || !this.session.has(owner)) return [];
+    const have = new Set(this.listShared().map((w) => w.id));
+    const added: SharedEntry[] = [];
+    for (const w of [...this.sharedList()]) {
+      if (w.network !== this.state.network || w.ownerWalletId === owner || have.has(w.id)) continue;
+      if (this.state.sharedHidden?.[owner]?.includes(w.id)) continue;
+      const y = await this.myIndexIn(this.words(owner), w.paymentScript);
+      if (y === undefined) continue;
+      const entry: SharedEntry = { ...w, ownerWalletId: owner, myIndex: y };
+      await this.persistShared(entry);
+      have.add(w.id);
+      added.push(entry);
+    }
+    return added;
+  }
+
   private sharedById(id: string): SharedEntry {
     const w = this.listShared().find((x) => x.id === id);
     if (!w) throw new WalletError("NOT_FOUND", "Không tìm thấy ví multisig");
@@ -414,6 +440,8 @@ export class WalletManager {
   private async persistShared(entry: SharedEntry) {
     const list = this.sharedList();
     const i = list.findIndex((x) => x.id === entry.id && x.ownerWalletId === entry.ownerWalletId);
+    const hidden = this.state.sharedHidden?.[entry.ownerWalletId];
+    if (hidden?.includes(entry.id)) this.state.sharedHidden![entry.ownerWalletId] = hidden.filter((x) => x !== entry.id);
     if (i >= 0) list[i] = { ...list[i]!, ...entry, signers: entry.signers.map((s) => ({ ...s, name: list[i]!.signers.find((o) => o.keyHash === s.keyHash && !/^Cosigner \d+$/.test(o.name))?.name ?? s.name })) };
     else list.push(entry);
     await this.save();
@@ -449,6 +477,7 @@ export class WalletManager {
 
   async discoverShared(): Promise<SharedEntry[]> {
     this.requireUnlocked();
+    await this.adoptLocalShared();
     const owner = this.activeMnemonicId();
     const words = this.words(owner);
     const creds = await Promise.all(Array.from({ length: DISCOVER_GAP }, (_, y) => sharedKeyHash(words, y)));
@@ -546,6 +575,9 @@ export class WalletManager {
   async removeShared(id: string) {
     const w = this.sharedById(id);
     this.state.shared = this.sharedList().filter((x) => !(x.id === id && x.ownerWalletId === w.ownerWalletId));
+    // Removed on purpose: do not adopt it again from another wallet on this device (importing it again does)
+    const hidden = ((this.state.sharedHidden ??= {})[w.ownerWalletId] ??= []);
+    if (!hidden.includes(id)) hidden.push(id);
     // Sign requests are shared by every wallet on this device that holds the multisig wallet
     if (!this.sharedList().some((x) => x.id === id)) delete (this.state.requests ??= {})[id];
     await this.save();

@@ -476,11 +476,14 @@ describe("AI-15: several wallets on one device", () => {
     expect((await m.listRequests(ms.id))[0]!.iSigned).toBe(true);
     const exported = m.exportShared(ms.id);
 
-    // wallet 2 has its own list: it adds the same multisig wallet, then sees the request as NOT signed by it
+    // wallet 2 picks up the multisig wallet held by wallet 1 on this device (it holds one of wallet 2's keys)
     await m.setActive(v2.id);
-    expect(m.listShared()).toHaveLength(0);
-    const mine = await m.importShared(exported); // was "Ví này đã tồn tại"
-    expect(mine.myIndex).toBe(0);
+    const adopted = await m.adoptLocalShared();
+    expect(adopted.map((w) => w.id)).toEqual([ms.id]);
+    expect(adopted[0]!.myIndex).toBe(0);
+    expect(m.listShared()).toHaveLength(1);
+    expect(await m.adoptLocalShared()).toHaveLength(0); // only once
+    expect((await m.importShared(exported)).id).toBe(ms.id); // importing again just updates it
     expect(await m.pendingActionCount()).toBe(1);
     const list = await m.listRequests(ms.id);
     expect(list).toHaveLength(1); // the request created by wallet 1 is visible
@@ -490,9 +493,22 @@ describe("AI-15: several wallets on one device", () => {
     expect(new Set(signed.preview.signedBy).size).toBe(2);
     expect(await m.submitRequest(signed.request)).toHaveLength(64);
 
+    // a wallet whose keys are not in the script does not get it
+    const m2 = new WalletManager(new MemoryStore(), providers);
+    await m2.setupPassword(PW);
+    await m2.addWallet("A", M[0]!);
+    const other = await m2.addWallet("X", m2.newMnemonic());
+    await m2.createShared({ name: "Riêng", required: 1, cosigners: [{ name: "V2", keyHash: k2 }] });
+    await m2.setActive(other.id);
+    expect(await m2.adoptLocalShared()).toHaveLength(0);
+
     // removing wallet 2's copy leaves wallet 1's; removing wallet 1 drops its entries
     await m.removeShared(ms.id);
     expect(m.listShared()).toHaveLength(0);
+    expect(await m.adoptLocalShared()).toHaveLength(0); // removed on purpose: not adopted again
+    expect((await m.importShared(exported)).id).toBe(ms.id); // an explicit import brings it back
+    expect(m.listShared()).toHaveLength(1);
+    await m.removeShared(ms.id);
     await m.setActive(v1.id);
     expect(m.listShared()).toHaveLength(1);
     await m.removeWallet(v1.id);
