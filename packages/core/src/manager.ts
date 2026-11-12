@@ -16,6 +16,7 @@ import { explainSubmitError } from "./koiosProvider";
 import { summarizeBalance, type WalletBalance } from "./balance";
 import { prepareSend, verifySendTx, minFeeFor, assertPreprodAddress, type SendRequest, type SendPreview, type PreparedSend } from "./send";
 import { analyzeTx, historyPage, historyRange, historyCsv, type HistoryPage, type TxDetail } from "./history";
+import { checkContact, resolveHandle, CONTACTS_MAX, type Contact, type ResolvedHandle } from "./contacts";
 import { buildRegistrationTx, parseRegistration, fromParts, registrationMetadata } from "./registration";
 
 export interface WalletMeta {
@@ -38,6 +39,8 @@ interface State {
   sharedHidden?: Record<string, string[]>;
   requests?: Record<string, SignRequest[]>;
   providerSettings?: ProviderSettings;
+  /** Address book (AI-22): local only */
+  contacts?: Contact[];
   /** Xác minh mật khẩu */
   check?: EncryptedBlob;
 }
@@ -299,6 +302,47 @@ export class WalletManager {
   async getHistory(limit = 20): Promise<TxSummary[]> {
     const a = await this.getAccount();
     return this.p().chain.getHistory(a.baseAddress, limit);
+  }
+
+  // ---------- address book + ADA Handle (AI-22) ----------
+  listContacts(): Contact[] {
+    this.requireUnlocked();
+    return [...(this.state.contacts ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Add (no id) or edit a contact. Addresses must be preprod and unique in the book. */
+  async saveContact(input: { id?: string; name: string; address: string; note?: string }): Promise<Contact> {
+    this.requireUnlocked();
+    const c = checkContact(input, this.state.network);
+    const list = (this.state.contacts ??= []);
+    const dup = list.find((x) => x.address === c.address && x.id !== input.id);
+    if (dup) throw new WalletError("INVALID_CONTACT", `Địa chỉ này đã có trong sổ: ${dup.name}`);
+    if (input.id) {
+      const cur = list.find((x) => x.id === input.id);
+      if (!cur) throw new WalletError("NOT_FOUND", "Không tìm thấy liên hệ");
+      delete cur.note;
+      Object.assign(cur, c);
+      await this.save();
+      return { ...cur };
+    }
+    if (list.length >= CONTACTS_MAX) throw new WalletError("INVALID_CONTACT", `Sổ địa chỉ tối đa ${CONTACTS_MAX} liên hệ`);
+    const contact: Contact = { id: crypto.randomUUID(), ...c, createdAt: Date.now() };
+    list.push(contact);
+    await this.save();
+    return { ...contact };
+  }
+
+  async removeContact(id: string) {
+    this.requireUnlocked();
+    const before = this.state.contacts?.length ?? 0;
+    this.state.contacts = (this.state.contacts ?? []).filter((x) => x.id !== id);
+    if (this.state.contacts.length === before) throw new WalletError("NOT_FOUND", "Không tìm thấy liên hệ");
+    await this.save();
+  }
+
+  /** `$handle` -> the preprod address holding it, for the user to confirm before signing (AC-003). */
+  resolveHandle(input: string): Promise<ResolvedHandle> {
+    return resolveHandle(this.p().chain, input, this.state.network);
   }
 
   // ---------- transaction history (AI-21) ----------

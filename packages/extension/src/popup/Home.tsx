@@ -4,6 +4,7 @@ import { rpc, fmtAda, parseAda, shorten, type AppState, type NetInfo, type Walle
 import { useAction, useWalletData } from "./hooks";
 import { useT } from "./i18n";
 import { ActionButton, Avatar, Button, Card, CopyField, ErrorText, Field, IconButton, Notice, Qr, Screen, SectionLabel, SignSheet, Spinner, Stars, TopBar, cx, showToast } from "./ui/ui";
+import { RecipientField, type Recipient } from "./Contacts";
 import { BackgroundGradient } from "./ui/aceternity/BackgroundGradient";
 import { Meteors } from "./ui/aceternity/Meteors";
 import { HoverList, useHoverItem } from "./ui/aceternity/HoverHighlight";
@@ -168,6 +169,7 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
   const net = netOf(st);
   const wallet = st.wallets.find((w) => w.id === st.active.walletId);
   const [to, setTo] = useState("");
+  const [recipient, setRecipient] = useState<Recipient>();
   const [amt, setAmt] = useState("");
   const [qty, setQty] = useState<Record<string, string>>({});
   const [formErr, setFormErr] = useState("");
@@ -183,7 +185,7 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
   const prepare = useAction(async () => {
     const p = await rpc<SendPreviewRpc>({
       type: "prepareSend",
-      to: to.trim(),
+      to: recipient!.address,
       ...(lovelace !== undefined && lovelace !== null ? { lovelace: lovelace.toString() } : {}),
       assets: chosen.map(([unit, q]) => ({ unit, quantity: q.trim() })),
     });
@@ -202,7 +204,8 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
     if (lovelace === null) return setFormErr(t("send.badAmt"));
     if (chosen.some(([, q]) => !/^\d+$/.test(q.trim()) || BigInt(q.trim()) <= 0n)) return setFormErr(t("send.badQty"));
     if (!chosen.length && (lovelace === undefined || lovelace < 1_000_000n)) return setFormErr(t("send.minAmt"));
-    if (!to.trim().startsWith(net.addressPrefix)) return setFormErr(t("send.badAddr", { prefix: net.addressPrefix, net: net.label }));
+    if (to.trim().startsWith("$") && !recipient) return setFormErr(t("handle.notResolved"));
+    if (!recipient) return setFormErr(t("send.badAddr", { prefix: net.addressPrefix, net: net.label }));
     setFormErr("");
     send.setError("");
     void prepare.run();
@@ -216,7 +219,7 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
       <Screen footer={<Button variant="primary" block onClick={review} loading={prepare.busy} disabled={!to || (!amt && !chosen.length)}>{t("send.review")}</Button>}>
         <TopBar title={t("send.title")} onBack={() => go("/")} right={<NetworkPill net={net} />} />
         <div className="space-y-3.5 animate-fade-up">
-          <Field label={t("send.to")}><textarea className="field min-h-[76px] resize-none font-mono" aria-label={t("send.to")} placeholder={`${net.addressPrefix}…`} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+          <RecipientField value={to} onChange={setTo} onResolved={setRecipient} prefix={net.addressPrefix} own={data.addr ? [data.addr] : []} />
           <Field label={t("send.amount")} hint={chosen.length ? t("send.adaOptional") : t("send.max")}><input className="field" inputMode="decimal" aria-label={t("send.amount")} placeholder="0.0" value={amt} onChange={(e) => setAmt(e.target.value)} /></Field>
           {owned.length > 0 && (
             <div>
@@ -248,7 +251,9 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
             ))}
             {preview.assets.length > 0 && <p className="text-[11px] text-moon-dim">{t("send.minAda")}: {fmtAda(preview.minLovelace)} {net.unit}</p>}
             <div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("send.toLine")}</div>
+            {(recipient?.label || recipient?.handle) && recipient.address === preview.to && <div className="text-[12.5px] font-medium text-ink" data-testid="send-to-label">{[recipient.label, recipient.handle].filter(Boolean).join(" · ")}</div>}
             <div className="break-all font-mono text-[11.5px] text-moon">{preview.to}</div>
+            {recipient && !recipient.known && <p className="text-[11px] text-warn">{t("contacts.firstSendShort")}</p>}
             <div className="flex justify-between text-[12.5px] text-moon"><span>{t("send.fee")}</span><span className="tabular-nums" data-testid="send-fee">{fmtAda(preview.fee)} {net.unit}</span></div>
             <div className="flex justify-between text-[12.5px] font-medium text-ink"><span>{t("send.total")}</span><span className="tabular-nums">{fmtAda(preview.totalLovelace)} {net.unit}</span></div>
           </Card>

@@ -48,6 +48,11 @@ export class BlockfrostClient {
     );
   }
 
+  async assetAddresses(unit: string): Promise<string[]> {
+    const rows = (await this.get<{ address: string; quantity: string }[]>(`/assets/${unit}/addresses`)) ?? [];
+    return rows.filter((x) => BigInt(x.quantity) > 0n).map((x) => x.address);
+  }
+
   /** Newest first. */
   async listAddressTxs(address: string, page: number, count: number): Promise<TxRef[]> {
     const rows = (await this.get<{ tx_hash: string; block_time: number; block_height: number }[]>(`/addresses/${address}/transactions?order=desc&count=${count}&page=${page}`)) ?? [];

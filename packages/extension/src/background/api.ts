@@ -45,6 +45,10 @@ export type Req =
   | { type: "balance" }
   | { type: "walletBalance" }
   | { type: "history"; limit?: number }
+  | { type: "contactList" }
+  | { type: "contactSave"; id?: string; name: string; address: string; note?: string }
+  | { type: "contactRemove"; id: string }
+  | { type: "resolveHandle"; handle: string }
   | { type: "historyPage"; page?: number; count?: number; sharedId?: string }
   | { type: "txDetail"; hash: string; sharedId?: string }
   | { type: "historyCsv"; from: number; to: number; sharedId?: string }
@@ -177,6 +181,14 @@ export class WalletApi {
         return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
+      case "contactList":
+        return m.listContacts();
+      case "contactSave":
+        return m.saveContact({ id: req.id, name: req.name, address: req.address, note: req.note });
+      case "contactRemove":
+        return m.removeContact(req.id);
+      case "resolveHandle":
+        return m.resolveHandle(req.handle);
       case "historyPage": {
         const p = await m.historyPage({ page: req.page, count: req.count, sharedId: req.sharedId });
         return { items: p.items.map(serializeTxDetail), hasMore: p.hasMore };
