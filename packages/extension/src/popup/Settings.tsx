@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Eye, EyeOff, Lock, Plus, Trash2, Check } from "lucide-react";
-import { rpc, type AppState, type Approval, type NetName } from "./rpc";
+import { rpc, type AppState, type Approval } from "./rpc";
 import { useAction } from "./hooks";
 import { usePrefs, useT, type Lang, type ThemePref } from "./i18n";
 import { Avatar, Button, Card, Checkbox, ErrorText, Field, Notice, Screen, SectionLabel, Segmented, Spinner, TopBar, cx, showToast } from "./ui/ui";
@@ -27,8 +27,7 @@ export function Settings({ st, refresh, go }: { st: AppState; refresh: () => voi
       <div className="space-y-4 animate-fade-up">
         <div>
           <SectionLabel>{t("settings.network")}</SectionLabel>
-          <Segmented<NetName> value={st.network} onChange={(n) => void rpc({ type: "setNetwork", network: n }).then(refresh)}
-            options={st.networks.filter((n) => !n.realFunds || st.mainnetEnabled).map((n) => [n.name, n.label] as const)} />
+          <div data-testid="network-fixed" className="text-[13px] text-moon">Preprod</div>
         </div>
         <div>
           <SectionLabel>{t("settings.theme")}</SectionLabel>
@@ -122,13 +121,11 @@ export function Approve({ id }: { id: string }) {
   );
 }
 
-/** Mainnet (tiền thật) mặc định tắt; proxy dữ liệu Blockfrost cho mainnet. */
+/** Optional Blockfrost preprod data proxy. */
 function Advanced({ st, refresh }: { st: AppState; refresh: () => void }) {
   const t = useT();
-  const [ack, setAck] = useState(false);
   const [url, setUrl] = useState(st.provider.proxyUrl ?? "");
   const [forTest, setForTest] = useState(!!st.provider.proxyForTestnets);
-  const toggle = useAction(async (enabled: boolean) => { await rpc({ type: "setMainnet", enabled }); setAck(false); refresh(); });
   const save = useAction(async () => {
     const u = url.trim();
     // Extension chỉ gọi được host đã được cấp quyền: xin quyền cho đúng origin của proxy.
@@ -144,19 +141,6 @@ function Advanced({ st, refresh }: { st: AppState; refresh: () => void }) {
   return (
     <Card className="space-y-3 p-3">
       <SectionLabel className="mb-0">{t("settings.advanced")}</SectionLabel>
-      <div className="space-y-2">
-        <div className="text-[13px] font-medium text-ink">{t("settings.mainnet")}</div>
-        {st.mainnetEnabled ? (
-          <Button block onClick={() => void toggle.run(false)} loading={toggle.busy}>{t("common.cancel")} Mainnet</Button>
-        ) : (
-          <>
-            <Notice tone="warn">{t("settings.mainnetWarn")}</Notice>
-            <Checkbox checked={ack} onChange={setAck}>{t("settings.mainnetAck")}</Checkbox>
-            <Button block disabled={!ack} loading={toggle.busy} data-testid="enable-mainnet" onClick={() => void toggle.run(true)}>{t("settings.mainnet")}</Button>
-          </>
-        )}
-        <ErrorText error={toggle.error} />
-      </div>
       <Field label={t("settings.proxy")} hint={t("settings.proxyHint")}>
         <input className="field font-mono" aria-label={t("settings.proxy")} placeholder="https://" value={url} onChange={(e) => setUrl(e.target.value)} />
       </Field>

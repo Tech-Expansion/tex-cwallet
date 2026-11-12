@@ -16,7 +16,7 @@ const srv = createServer((_, res) => { res.setHeader("content-type", "text/html"
 await new Promise((r) => srv.listen(0, "127.0.0.1", r));
 const dappUrl = `http://127.0.0.1:${srv.address().port}/`;
 
-// Upstream Blockfrost giả + proxy thật (packages/proxy) để kiểm thử mainnet từ đầu đến cuối.
+// Fake Blockfrost preprod upstream + the real proxy (packages/proxy) to test the Blockfrost path end to end.
 const upstream = createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   if (/\/addresses\/[^/]+$/.test(req.url)) return res.end(JSON.stringify({ amount: [{ unit: "lovelace", quantity: "12000000" }] }));
@@ -24,7 +24,7 @@ const upstream = createServer((req, res) => {
   res.statusCode = 404; res.end("{}");
 });
 await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
-const proxy = createProxy({ keys: { mainnet: "TEST_KEY" }, upstream: { mainnet: `http://127.0.0.1:${upstream.address().port}/api/v0` }, adminToken: "adm" });
+const proxy = createProxy({ keys: { preprod: "TEST_KEY" }, upstream: { preprod: `http://127.0.0.1:${upstream.address().port}/api/v0` }, adminToken: "adm" });
 const proxySrv = createServer((req, res) => void proxy.handle(req, res));
 await new Promise((r) => proxySrv.listen(0, "127.0.0.1", r));
 const proxyUrl = `http://127.0.0.1:${proxySrv.address().port}`;
@@ -147,10 +147,9 @@ try {
   await popup.getByRole("button", { name: "Tab Hoạt động" }).click();
   await popup.getByText("Chưa có giao dịch").waitFor();
   await popup.getByRole("button", { name: "Tab Cài đặt" }).click();
-  await popup.getByRole("tab", { name: "Preview" }).click();
-  await popup.getByRole("button", { name: "Tab Ví" }).click();
-  await popup.getByTestId("network-pill").filter({ hasText: "Preview" }).waitFor();
-  await popup.getByRole("button", { name: "Tab Cài đặt" }).click();
+  assert.equal(await popup.getByTestId("network-fixed").innerText(), "Preprod");
+  assert.equal(await popup.getByRole("tab", { name: "Preview" }).count(), 0, "không có mạng nào khác preprod");
+  assert.equal(await popup.getByRole("tab", { name: "Mainnet" }).count(), 0, "không có mạng nào khác preprod");
   await popup.getByRole("tab", { name: "Sáng" }).click();
   assert.equal(await popup.evaluate(() => document.documentElement.dataset.theme), "light");
   await shot(popup, "07-settings-light");
@@ -164,38 +163,21 @@ try {
   await popup.getByRole("tab", { name: "Tối" }).click();
   log("điều hướng, đổi mạng/giao diện/ngôn ngữ OK");
 
-  // Mainnet: mặc định ẩn → bật có cảnh báo → cần proxy → địa chỉ addr1 → số dư qua proxy thật
-  await popup.getByRole("button", { name: "Tab Cài đặt" }).click();
-  assert.equal(await popup.getByRole("tab", { name: "Mainnet" }).count(), 0, "mainnet phải ẩn khi chưa bật");
-  const enable = popup.getByTestId("enable-mainnet");
-  assert.equal(await enable.isDisabled(), true, "phải tick xác nhận rủi ro");
-  await popup.getByText("Tôi hiểu rủi ro").click();
-  await enable.click();
-  await popup.getByRole("tab", { name: "Mainnet" }).click();
-  await popup.getByRole("button", { name: "Tab Ví" }).click();
-  await popup.getByTestId("network-pill").filter({ hasText: "Mainnet" }).waitFor();
-  await popup.getByRole("alert").filter({ hasText: /proxy/i }).waitFor(); // chưa cấu hình proxy
-  await popup.getByRole("button", { name: "Nhận" }).click();
-  assert.match(await popup.getByTestId("addr").innerText(), /^addr1/);
-  await popup.getByRole("button", { name: "Quay lại" }).click();
-  await popup.getByRole("button", { name: "Gửi", exact: true }).click();
-  await popup.getByLabel("Địa chỉ nhận").fill(addr); // địa chỉ testnet trên mainnet
-  await popup.getByLabel("Số ADA").fill("2");
-  await popup.getByRole("button", { name: "Xem lại" }).click();
-  assert.match(await popup.getByRole("alert").innerText(), /addr1/);
-  await popup.getByRole("button", { name: "Quay lại" }).click();
+  // Blockfrost preprod through the real proxy (optional instead of Koios)
   await popup.getByRole("button", { name: "Tab Cài đặt" }).click();
   await popup.getByLabel("Proxy dữ liệu (Blockfrost)").fill(proxyUrl);
+  await popup.getByText("Dùng Blockfrost qua proxy thay cho Koios").click();
   await popup.getByRole("button", { name: "Lưu proxy" }).click();
   await popup.getByRole("button", { name: "Tab Ví" }).click();
   await popup.getByRole("button", { name: "Làm mới" }).click();
   await popup.waitForFunction(() => document.querySelector("[data-testid=balance]")?.textContent === "12", null, { timeout: 15000 });
-  assert.equal(proxy.stats.upstream.mainnet >= 1, true);
-  assert.equal(proxy.stats.clientRequests >= 1, true);
-  await shot(popup, "10-mainnet");
-  log(`mainnet qua proxy OK (upstream=${proxy.stats.upstream.mainnet}, client=${proxy.stats.clientRequests})`);
+  assert.equal(proxy.stats.upstream.preprod >= 1, true);
+  await shot(popup, "10-blockfrost-preprod");
+  log(`Blockfrost preprod qua proxy OK (upstream=${proxy.stats.upstream.preprod}, client=${proxy.stats.clientRequests})`);
   await popup.getByRole("button", { name: "Tab Cài đặt" }).click();
-  await popup.getByRole("tab", { name: "Preprod" }).click();
+  await popup.getByLabel("Proxy dữ liệu (Blockfrost)").fill("");
+  await popup.getByText("Dùng Blockfrost qua proxy thay cho Koios").click();
+  await popup.getByRole("button", { name: "Lưu proxy" }).click();
 
   // Khóa & mở khóa sai/đúng
   await popup.getByRole("button", { name: "Khóa ví" }).click();

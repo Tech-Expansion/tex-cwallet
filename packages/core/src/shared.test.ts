@@ -9,7 +9,7 @@ const W = [
   "letter advice cage absurd amount doctor acoustic avoid letter advice cage above",
 ].map((m) => m.split(" "));
 
-async function setup(required = 2, network: "preprod" | "mainnet" = "preprod") {
+async function setup(required = 2, network: "preprod" = "preprod") {
   const kh = await Promise.all(W.map((w) => sharedKeyHash(w, 0)));
   const script = buildPaymentScript(required, kh);
   const wallet = makeSharedWallet({ name: "Quỹ", network, paymentScript: script, signers: kh.map((k, i) => ({ keyHash: k, name: `S${i}` })) });
@@ -42,9 +42,7 @@ describe("script & địa chỉ", () => {
     expect(buildPaymentScript(3, kh).type).toBe("all");
     const rev = makeSharedWallet({ name: "x", network: "preprod", paymentScript: buildPaymentScript(2, [...kh].reverse()) });
     expect(rev.address).toBe(wallet.address);
-    const main = makeSharedWallet({ name: "x", network: "mainnet", paymentScript: wallet.paymentScript });
-    expect(main.address.startsWith("addr1w")).toBe(true);
-    expect(main.id).toBe(`mainnet-${wallet.paymentScriptHash}`);
+    expect(wallet.id).toBe(`preprod-${wallet.paymentScriptHash}`);
   });
   it("script CBOR xuất ra rồi nhập lại cho cùng hash và địa chỉ (import từ Eternl/Mesh)", async () => {
     const { wallet, script } = await setup(2);

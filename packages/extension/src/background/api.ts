@@ -40,7 +40,6 @@ export type Req =
   | { type: "addAccount"; walletId: string }
   | { type: "setActive"; walletId: string; account: number }
   | { type: "setNetwork"; network: NetworkName }
-  | { type: "setMainnet"; enabled: boolean }
   | { type: "setProvider"; proxyUrl?: string; proxyForTestnets?: boolean }
   | { type: "account" }
   | { type: "balance" }
@@ -116,11 +115,10 @@ export class WalletApi {
           wallets: m.isUnlocked() ? m.listWallets() : [],
           active: m.active,
           network: m.network,
-          mainnetEnabled: m.mainnetEnabled,
           provider: m.providerSettings,
           networks: Object.values(NETWORKS).map((n) => ({
             name: n.name, label: n.label, faucetUrl: n.faucetUrl, explorerTxUrl: n.explorerTxUrl,
-            realFunds: n.realFunds, unit: n.unit, addressPrefix: n.addressPrefix,
+            unit: n.unit, addressPrefix: n.addressPrefix,
           })),
         };
       case "setup":
@@ -155,9 +153,6 @@ export class WalletApi {
       case "setNetwork":
         await this.disconnectAll();
         return m.setNetwork(req.network);
-      case "setMainnet":
-        await this.disconnectAll();
-        return m.setMainnetEnabled(req.enabled);
       case "setProvider":
         return m.setProviderSettings({ ...m.providerSettings, proxyUrl: req.proxyUrl?.trim() || undefined, proxyForTestnets: !!req.proxyForTestnets });
       case "account":
@@ -214,6 +209,9 @@ export class WalletApi {
         this.approvals.delete(req.id);
         return null;
       }
+      default:
+        // Unknown request types (e.g. the removed setMainnet) fail instead of resolving to undefined.
+        throw new WalletError("NOT_FOUND", `Không hỗ trợ yêu cầu ${(req as { type?: string }).type}`);
     }
   }
 

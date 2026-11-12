@@ -10,6 +10,15 @@ export interface TxSummary {
   netLovelace: bigint;
 }
 
+/** Current chain tip. */
+export interface ChainTip {
+  hash: string;
+  epoch: number;
+  slot: number;
+  blockHeight: number;
+  blockTime: number;
+}
+
 export interface AssetBalance {
   unit: string; // "lovelace" hoặc policyId+assetNameHex
   quantity: string;
@@ -41,6 +50,14 @@ export class KoiosClient {
     });
     if (!r.ok) throw new Error(`Koios ${path} lỗi ${r.status}`);
     return (await r.json()) as T;
+  }
+
+  async getTip(): Promise<ChainTip> {
+    const r = await this.f(`${this.url}/tip`, { headers: { accept: "application/json" } });
+    if (!r.ok) throw new Error(`Koios tip lỗi ${r.status}`);
+    const t = ((await r.json()) as any[])[0];
+    if (!t) throw new Error("Koios không trả tip");
+    return { hash: t.hash, epoch: Number(t.epoch_no), slot: Number(t.abs_slot), blockHeight: Number(t.block_no), blockTime: Number(t.block_time) };
   }
 
   async txExists(txHash: string): Promise<boolean> {

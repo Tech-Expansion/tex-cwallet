@@ -1,87 +1,115 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { WalletManager, MemoryStore, NETWORKS, BlockfrostClient, KoiosClient, defaultProviders, type ProviderFactory } from "./index";
+import {
+  WalletManager, MemoryStore, NETWORKS, NETWORK_NAMES, BlockfrostClient, KoiosClient, defaultProviders,
+  assertNetwork, networkFromEnv, UnsupportedNetworkError, type ProviderFactory, type ChainClient,
+} from "./index";
 
 const M = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const PW = "correct-horse";
+const TIP = { hash: "b".repeat(64), epoch: 180, slot: 77_000_000, blockHeight: 3_000_000, blockTime: 1_762_000_000 };
 
-describe("registry mạng", () => {
-  it("3 mạng, chỉ mainnet có tiền thật và network id 1", () => {
-    expect(Object.keys(NETWORKS).sort()).toEqual(["mainnet", "preprod", "preview"]);
-    expect(NETWORKS.mainnet).toMatchObject({ networkId: 1, addressPrefix: "addr1", realFunds: true, unit: "ADA" });
-    expect(NETWORKS.preprod).toMatchObject({ networkId: 0, addressPrefix: "addr_test1", realFunds: false });
-    expect(NETWORKS.preview.realFunds).toBe(false);
-  });
+/** Fake chain: tests need no network (AI-2 AC-002). */
+export const fakeChain = (over: Partial<ChainClient> = {}): ChainClient => ({
+  getTip: async () => TIP,
+  getBalance: async () => [],
+  getHistory: async () => [],
+  getProtocolParams: async () => { throw new Error("no params"); },
+  findRegistrations: async () => [],
+  txExists: async () => false,
+  ...over,
 });
 
-describe("mainnet", () => {
-  let m: WalletManager;
-  const fake: ProviderFactory = (n) => ({
-    fetcher: { fetchAddressUTxOs: async (address: string) => [{ input: { txHash: "a".repeat(64), outputIndex: 0 }, output: { address, amount: [{ unit: "lovelace", quantity: "50000000" }] } }] } as any,
-    submitter: { submitTx: async () => "f".repeat(64) } as any,
-    chain: { getBalance: async () => [], getHistory: async () => [], getProtocolParams: async () => { throw new Error("no params"); }, findRegistrations: async () => [], txExists: async () => false },
-  });
-  beforeEach(async () => {
-    m = new WalletManager(new MemoryStore(), fake);
-    await m.setupPassword(PW);
-    await m.addWallet("A", M);
+describe("AI-2: chỉ preprod", () => {
+  it("registry chỉ có preprod, network id 0, tiền tố addr_test1", () => {
+    expect(Object.keys(NETWORKS)).toEqual(["preprod"]);
+    expect(NETWORK_NAMES).toEqual(["preprod"]);
+    expect(NETWORKS.preprod).toMatchObject({ networkId: 0, addressPrefix: "addr_test1", unit: "tADA" });
   });
 
-  it("bị khóa mặc định; bật rồi mới chuyển được; tắt thì quay về mạng mặc định", async () => {
-    await expect(m.setNetwork("mainnet")).rejects.toMatchObject({ code: "MAINNET_DISABLED" });
-    await m.setMainnetEnabled(true);
-    await m.setNetwork("mainnet");
-    expect(m.network).toBe("mainnet");
-    await m.setMainnetEnabled(false);
-    expect(m.network).toBe("preprod");
+  it("AC-003: mạng khác preprod bị từ chối", () => {
+    for (const bad of ["mainnet", "preview", "Mainnet", "", undefined, 1, null])
+      expect(() => assertNetwork(bad)).toThrow(UnsupportedNetworkError);
+    expect(assertNetwork("preprod")).toBe("preprod");
+    expect(() => defaultProviders("mainnet" as never, {})).toThrow(UnsupportedNetworkError);
   });
 
-  it("địa chỉ mainnet là addr1…, khác testnet; mnemonic dùng chung", async () => {
-    const test = (await m.getAccount()).baseAddress;
-    await m.setMainnetEnabled(true);
-    await m.setNetwork("mainnet");
-    const main = (await m.getAccount()).baseAddress;
-    expect(test.startsWith("addr_test1")).toBe(true);
-    expect(main.startsWith("addr1")).toBe(true);
-    // preview và preprod cùng địa chỉ
-    await m.setNetwork("preview");
-    expect((await m.getAccount()).baseAddress).toBe(test);
+  it("AC-003: biến môi trường CARDANO_NETWORK khác preprod làm khởi động thất bại", () => {
+    expect(networkFromEnv({})).toBe("preprod");
+    expect(networkFromEnv({ CARDANO_NETWORK: "preprod" })).toBe("preprod");
+    expect(networkFromEnv({ CARDANO_NETWORK: " PREPROD " })).toBe("preprod");
+    expect(() => networkFromEnv({ CARDANO_NETWORK: "mainnet" })).toThrow(/chỉ chạy trên preprod/);
+    expect(() => networkFromEnv({ CARDANO_NETWORK: "preview" })).toThrow(UnsupportedNetworkError);
   });
 
-  it("chặn gửi nhầm mạng (testnet ↔ mainnet)", async () => {
-    const testAddr = (await m.getAccount()).baseAddress;
-    await m.setMainnetEnabled(true);
-    await m.setNetwork("mainnet");
-    const mainAddr = (await m.getAccount()).baseAddress;
-    await expect(m.sendAda(testAddr, 2_000_000n)).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
-    await m.setNetwork("preprod");
-    await expect(m.sendAda(mainAddr, 2_000_000n)).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+  it("AC-003: state đã lưu với mạng khác preprod bị từ chối khi load", async () => {
+    for (const network of ["mainnet", "preview"]) {
+      const store = new MemoryStore();
+      await store.set("wallet-state-v1", { wallets: [], activeAccount: 0, network });
+      await expect(new WalletManager(store).load()).rejects.toMatchObject({ code: "UNSUPPORTED_NETWORK" });
+    }
   });
 
-  it("mainnet không được ký khi thiếu tham số giao thức; testnet vẫn gửi được", async () => {
-    const to = (await m.getAccount()).baseAddress;
-    expect(await m.sendAda(to, 2_000_000n)).toHaveLength(64); // preprod, params lỗi -> mặc định
-    await m.setMainnetEnabled(true);
-    await m.setNetwork("mainnet");
-    const mainTo = (await m.getAccount()).baseAddress;
-    await expect(m.sendAda(mainTo, 2_000_000n)).rejects.toThrow(/tham số giao thức/);
+  describe("với ví đã mở", () => {
+    let m: WalletManager;
+    const fake: ProviderFactory = () => ({
+      fetcher: { fetchAddressUTxOs: async () => [] } as any,
+      submitter: { submitTx: async () => "f".repeat(64) } as any,
+      chain: fakeChain(),
+    });
+    beforeEach(async () => {
+      m = new WalletManager(new MemoryStore(), fake);
+      await m.setupPassword(PW);
+      await m.addWallet("A", M);
+    });
+
+    it("setNetwork chỉ nhận preprod", async () => {
+      await expect(m.setNetwork("mainnet")).rejects.toMatchObject({ code: "UNSUPPORTED_NETWORK" });
+      await expect(m.setNetwork("preview")).rejects.toMatchObject({ code: "UNSUPPORTED_NETWORK" });
+      await m.setNetwork("preprod");
+      expect(m.network).toBe("preprod");
+    });
+
+    it("AC-002: đọc tip qua interface (bản fake)", async () => {
+      expect(await m.getTip()).toEqual(TIP);
+    });
+
+    it("địa chỉ ví là addr_test1…", async () => {
+      expect((await m.getAccount()).baseAddress.startsWith("addr_test1")).toBe(true);
+    });
+
+    it("URL proxy phải hợp lệ", async () => {
+      await expect(m.setProviderSettings({ proxyUrl: "not a url" })).rejects.toThrow(/URL/);
+      await m.setProviderSettings({ proxyUrl: "https://p.example.com" });
+      expect(m.providerSettings.proxyUrl).toBe("https://p.example.com");
+    });
   });
 
-  it("mainnet không có proxy thì báo lỗi rõ ràng; có proxy thì dựng được provider", () => {
-    expect(() => defaultProviders("mainnet", {})).toThrow(/proxy/);
-    expect(defaultProviders("mainnet", { proxyUrl: "https://p.example.com/" }).chain).toBeInstanceOf(BlockfrostClient);
+  it("chọn nguồn dữ liệu: Koios mặc định, Blockfrost preprod qua proxy nếu bật", () => {
     expect(defaultProviders("preprod", {}).chain).toBeInstanceOf(KoiosClient);
     expect(defaultProviders("preprod", { proxyUrl: "https://p.example.com", proxyForTestnets: true }).chain).toBeInstanceOf(BlockfrostClient);
   });
+});
 
-  it("URL proxy phải hợp lệ", async () => {
-    await expect(m.setProviderSettings({ proxyUrl: "not a url" })).rejects.toThrow(/URL/);
-    await m.setProviderSettings({ proxyUrl: "https://p.example.com" });
-    expect(m.providerSettings.proxyUrl).toBe("https://p.example.com");
+describe("getTip trên client thật (fetch giả)", () => {
+  const j = (b: unknown, status = 200) => ({ ok: status < 400, status, json: async () => b }) as Response;
+  it("Koios /tip", async () => {
+    const f = (async (url: string) => {
+      expect(url).toBe("https://k/api/v1/tip");
+      return j([{ hash: TIP.hash, epoch_no: 180, abs_slot: 77_000_000, block_no: 3_000_000, block_time: 1_762_000_000 }]);
+    }) as never;
+    expect(await new KoiosClient("preprod", f, "https://k/api/v1").getTip()).toEqual(TIP);
+  });
+  it("Blockfrost /blocks/latest", async () => {
+    const f = (async (url: string) => {
+      expect(url).toBe("https://p/api/v0/blocks/latest");
+      return j({ hash: TIP.hash, epoch: 180, slot: 77_000_000, height: 3_000_000, time: 1_762_000_000 });
+    }) as never;
+    expect(await new BlockfrostClient("https://p/api/v0", async () => ({}) as never, f).getTip()).toEqual(TIP);
   });
 });
 
 describe("BlockfrostClient", () => {
-  const ADDR = "addr1qxyz";
+  const ADDR = "addr_test1qxyz";
   const calls: string[] = [];
   const f = (async (url: string) => {
     calls.push(url.replace("https://p/api/v0", ""));
@@ -90,8 +118,8 @@ describe("BlockfrostClient", () => {
     if (url.includes(`/addresses/${ADDR}/transactions`)) return j([{ tx_hash: "t1", block_time: 20 }, { tx_hash: "t2", block_time: 10 }]);
     if (url.endsWith("/txs/t1/utxos")) return j({ inputs: [], outputs: [{ address: ADDR, amount: [{ unit: "lovelace", quantity: "5000000" }] }] });
     if (url.endsWith("/txs/t2/utxos")) return j({ inputs: [{ address: ADDR, amount: [{ unit: "lovelace", quantity: "2000000" }] }], outputs: [] });
-    if (url.endsWith("/addresses/addr1new")) return j({}, 404);
-    if (url.endsWith("/addresses/addr1full")) return j({}, 402);
+    if (url.endsWith("/addresses/addr_test1new")) return j({}, 404);
+    if (url.endsWith("/addresses/addr_test1full")) return j({}, 402);
     return j({}, 500);
   }) as any;
   const c = new BlockfrostClient("https://p/api/v0", async () => ({}) as any, f);
@@ -108,7 +136,7 @@ describe("BlockfrostClient", () => {
     expect(calls).toHaveLength(3);
   });
   it("địa chỉ mới (404) = số dư rỗng; 402 báo hết hạn mức", async () => {
-    expect(await c.getBalance(["addr1new"])).toEqual([]);
-    await expect(c.getBalance(["addr1full"])).rejects.toThrow(/hết hạn mức/);
+    expect(await c.getBalance(["addr_test1new"])).toEqual([]);
+    await expect(c.getBalance(["addr_test1full"])).rejects.toThrow(/hết hạn mức/);
   });
 });

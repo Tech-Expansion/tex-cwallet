@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Cardano Multi Wallet",
   "version": "0.1.0",
-  "description": "Ví Cardano đa ví (preprod / preview)",
+  "description": "Ví Cardano đa ví (chỉ preprod)",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Cardano Multi Wallet",
@@ -22,7 +22,6 @@
   ],
   "host_permissions": [
     "https://preprod.koios.rest/*",
-    "https://preview.koios.rest/*",
     "http://127.0.0.1/*",
     "http://localhost/*"
   ],

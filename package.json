@@ -7,6 +7,8 @@
   "scripts": {
     "test": "npm test -w @wallet/core && npm test -w @wallet/extension && npm test -w @wallet/proxy",
     "typecheck": "npm run typecheck -w @wallet/core && npm run typecheck -w @wallet/extension && npm run typecheck -w @wallet/proxy",
+    "lint": "npm run typecheck && node scripts/check-preprod.mjs",
+    "check": "npm run lint && npm test",
     "build": "npm run build -w @wallet/extension",
     "e2e": "npm run e2e -w @wallet/extension",
     "proxy": "npm start -w @wallet/proxy",
