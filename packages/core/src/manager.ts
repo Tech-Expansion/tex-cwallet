@@ -10,7 +10,7 @@ import type { KeyValueStore } from "./storage";
 import { WalletError } from "./errors";
 import {
   sharedKeyHash, signWithSharedKey, buildPaymentScript, makeSharedWallet, buildSharedSend, inspectSharedTx, attachWitnesses, readWitnesses,
-  scriptFromCbor, scriptHashOf, toKeyHash, keysOf, SharedError, type SharedWallet, type Signer, type TxPreview, type NativeScriptJson,
+  scriptFromCbor, scriptHashOf, cosignerKeyHash, keysOf, SharedError, type SharedWallet, type Signer, type TxPreview, type NativeScriptJson,
 } from "./shared";
 import { explainSubmitError } from "./koiosProvider";
 import { summarizeBalance, type WalletBalance } from "./balance";
@@ -430,7 +430,7 @@ export class WalletManager {
     const owner = this.activeMnemonicId();
     const y = p.myIndex ?? (await this.sharedNextIndex()).y;
     const mine = await sharedKeyHash(this.words(owner), y);
-    const others = p.cosigners.map((c) => ({ name: c.name, keyHash: toKeyHash(c.keyHash) }));
+    const others = await Promise.all(p.cosigners.map(async (c) => ({ name: c.name, keyHash: await cosignerKeyHash(c.keyHash) })));
     if (others.some((c) => c.keyHash === mine)) throw new SharedError("INVALID_CONFIG", "Khóa của bạn được thêm tự động, đừng nhập lại");
     const signers = [{ name: p.myName || "Tôi", keyHash: mine }, ...others];
     const script = buildPaymentScript(p.required, signers.map((s) => s.keyHash));
@@ -493,6 +493,10 @@ export class WalletManager {
 
   async sharedBalance(id: string): Promise<AssetBalance[]> {
     return this.p().chain.getBalance([this.sharedById(id).address]);
+  }
+  /** Multisig balance shown like a normal wallet: ADA + each asset (AI-7 AC-004). */
+  async sharedWalletBalance(id: string): Promise<WalletBalance> {
+    return summarizeBalance(await this.sharedBalance(id));
   }
 
   /** Đăng ký ví on-chain (CIP-0146) để cosigner tự khám phá. Phí do ví thường của bạn trả; khóa multisig phải chưa từng đăng ký. */
