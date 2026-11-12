@@ -1,4 +1,4 @@
-import { summarizeTx, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeBalance, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -43,6 +43,7 @@ export type Req =
   | { type: "setProvider"; proxyUrl?: string; proxyForTestnets?: boolean }
   | { type: "account" }
   | { type: "balance" }
+  | { type: "walletBalance" }
   | { type: "history"; limit?: number }
   | { type: "sendAda"; to: string; lovelace: string; password: string }
   | { type: "exportMnemonic"; id: string; password: string }
@@ -159,6 +160,8 @@ export class WalletApi {
         return m.getAccount();
       case "balance":
         return m.getBalance();
+      case "walletBalance":
+        return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
       case "sendAda":

@@ -13,6 +13,7 @@ import {
   scriptFromCbor, scriptHashOf, toKeyHash, keysOf, SharedError, type SharedWallet, type Signer, type TxPreview, type NativeScriptJson,
 } from "./shared";
 import { explainSubmitError } from "./koiosProvider";
+import { summarizeBalance, type WalletBalance } from "./balance";
 import { buildRegistrationTx, parseRegistration, fromParts, registrationMetadata } from "./registration";
 
 export interface WalletMeta {
@@ -262,6 +263,14 @@ export class WalletManager {
   async getBalance(): Promise<AssetBalance[]> {
     const a = await this.getAccount();
     return this.p().chain.getBalance([a.baseAddress]);
+  }
+
+  /**
+   * ADA balance (lovelace + 6 decimals) and each native asset (AI-4). The data source sums the address
+   * UTxO set (Koios utxo_set / Blockfrost /addresses); use balanceFromUtxos() when the UTxOs are at hand.
+   */
+  async getWalletBalance(): Promise<WalletBalance> {
+    return summarizeBalance(await this.getBalance());
   }
 
   /** Preprod chain tip (AI-2 AC-002) */

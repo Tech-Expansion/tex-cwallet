@@ -30,6 +30,7 @@ describe("WalletApi", () => {
     expect(st.wallets).toHaveLength(1);
     expect(st.wallets[0].vault).toBeUndefined();
     expect(await api.handle({ type: "balance" })).toEqual([]);
+    expect(await api.handle({ type: "walletBalance" })).toEqual({ lovelace: "0", ada: "0.000000", assets: [] });
   });
 
   it("thao tác khi khóa bị từ chối; không lộ ví trong state", async () => {
@@ -90,7 +91,7 @@ describe("WalletApi", () => {
     let detail = "";
     api.onApprovalNeeded = (a) => { detail = a.detail ?? ""; void api.handle({ type: "resolveApproval", id: a.id, ok: false }); };
     await expect(api.dapp("https://x.io", "signTx", [signedTx, false])).rejects.toThrow(/từ chối/);
-    expect(detail).toContain("2 ADA");
+    expect(detail).toContain("2.000000 ADA");
 
     api.onApprovalNeeded = (a) => void api.handle({ type: "resolveApproval", id: a.id, ok: true });
     expect(await api.dapp("https://x.io", "signTx", [signedTx, true])).toMatch(/^[0-9a-f]+$/);

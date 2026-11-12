@@ -156,7 +156,7 @@ describe("WalletManager", () => {
     const { signedTx } = await m.buildSendAda(to, 3_000_000n);
     const s = summarizeTx(signedTx);
     expect(s).toContain(to);
-    expect(s).toContain("3 ADA");
+    expect(s).toContain("3.000000 ADA");
     expect(s).toMatch(/Phí: 0\.\d+ ADA/);
     expect(summarizeTx("zz")).toContain("Không giải mã");
   });

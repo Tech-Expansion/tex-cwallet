@@ -69,8 +69,8 @@ export function Dashboard({ st, data, go }: { st: AppState; data: Data; go: (r: 
   const t = useT();
   const net = netOf(st);
   const wallet = st.wallets.find((w) => w.id === st.active.walletId);
-  const lovelace = data.bal?.find((b) => b.unit === "lovelace")?.quantity ?? "0";
-  const tokens = (data.bal ?? []).filter((b) => b.unit !== "lovelace");
+  const lovelace = data.bal?.lovelace ?? "0";
+  const tokens = data.bal?.assets ?? [];
   const watch = wallet?.kind === "watch";
 
   return (
@@ -119,10 +119,13 @@ export function Dashboard({ st, data, go }: { st: AppState; data: Data; go: (r: 
             <Card className="p-3">
               <ul className="space-y-2">
                 {tokens.map((tk) => (
-                  <li key={tk.unit} className="flex items-center gap-3">
-                    <Avatar seed={tk.unit} size={28}>{tk.unit.slice(0, 2)}</Avatar>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-moon-soft" title={tk.unit}>{shorten(tk.unit, 8)}</span>
-                    <span className="text-[13px] font-medium tabular-nums text-ink">{tk.quantity}</span>
+                  <li key={tk.unit} className="flex items-center gap-3" data-testid="asset">
+                    <Avatar seed={tk.unit} size={28}>{(tk.assetName ?? tk.policyId).slice(0, 2)}</Avatar>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] text-ink" title={tk.assetNameHex}>{tk.assetName ?? (tk.assetNameHex ? `0x${tk.assetNameHex}` : "—")}</span>
+                      <span className="block truncate font-mono text-[10.5px] text-moon-dim" title={tk.policyId}>{shorten(tk.policyId, 8)}{tk.assetName && tk.assetNameHex ? ` · ${shorten(tk.assetNameHex, 6)}` : ""}</span>
+                    </span>
+                    <span className="text-[13px] font-medium tabular-nums text-ink">{BigInt(tk.quantity).toLocaleString("en-US")}</span>
                   </li>
                 ))}
               </ul>
