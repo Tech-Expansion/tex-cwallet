@@ -15,8 +15,8 @@ export function Multisig({ st, route, go }: { st: AppState; route: string; go: (
   const t = useT();
   if (wallet?.kind !== "mnemonic")
     return <Screen><TopBar title={t("ms2.title")} right={<NetworkPill net={netOf(st)} />} /><Notice tone="warn">{t("ms2.walletWatch")}</Notice></Screen>;
-  const w = route.match(/^\/multisig\/w\/(.+)$/);
-  if (w) return <Detail st={st} id={w[1]!} go={go} />;
+  const w = route.match(/^\/multisig\/w\/([^?]+)(?:\?(.*))?$/);
+  if (w) return <Detail st={st} id={w[1]!} go={go} created={new URLSearchParams(w[2] ?? "").get("created") === "1"} />;
   if (route.startsWith("/multisig/new")) return <Create st={st} go={go} prefillKey={new URLSearchParams(route.split("?")[1] ?? "").get("key") ?? ""} />;
   if (route === "/multisig/import") return <Import go={go} />;
   return <List st={st} go={go} />;
@@ -141,34 +141,119 @@ function List({ st, go }: { st: AppState; go: (r: string) => void }) {
   );
 }
 
+type CosignerRow = { name: string; key: string; hash?: string; error?: string };
+type Preview = { address: string; paymentScriptHash: string; required: number; total: number; exists: boolean };
+
+/** "Name key" lines (the old textarea format, or several keys pasted at once) -> rows. */
+const parseRows = (text: string): CosignerRow[] =>
+  text.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+    const m = l.match(/^(.*?)[\s,:;]+(\S+)$/);
+    return m ? { name: m[1]!.trim(), key: m[2]! } : { name: "", key: l };
+  });
+
+/**
+ * Create a multisig wallet step by step (AI-13): one row per cosigner, each key checked as it is typed,
+ * m-of-n on a slider, and the resulting address previewed (with a copy button) before anything is saved.
+ */
 function Create({ st, go, prefillKey }: { st: AppState; go: (r: string) => void; prefillKey: string }) {
   const t = useT();
   const [name, setName] = useState("");
   const [myName, setMyName] = useState("");
+  const [rows, setRows] = useState<CosignerRow[]>([{ name: "", key: prefillKey }]);
   const [required, setRequired] = useState(2);
-  const [lines, setLines] = useState(prefillKey ? `Cosigner 2 ${prefillKey}` : "");
-  const cosigners = lines.split("\n").map((l) => l.trim()).filter(Boolean).map((l, i) => {
-    const m = l.match(/^(.*?)[\s,:;]+(\S+)$/);
-    return m ? { name: m[1]!.trim() || `Cosigner ${i + 2}`, keyHash: m[2]! } : { name: `Cosigner ${i + 2}`, keyHash: l };
-  });
+  const [preview, setPreview] = useState<Preview>();
+  const [previewError, setPreviewError] = useState("");
+  const filled = rows.filter((r) => r.key.trim());
+  const valid = filled.length > 0 && filled.every((r) => r.hash);
+  const n = filled.length + 1;
+  const m = Math.min(Math.max(1, required), n);
+  const cosigners = filled.map((r, i) => ({ name: r.name.trim() || `Cosigner ${i + 2}`, keyHash: r.hash ?? r.key.trim() }));
+
+  // Check each key locally as it changes
+  const keys = rows.map((r) => r.key.trim()).join("\n");
+  useEffect(() => {
+    let live = true;
+    void Promise.all(rows.map(async (r) => {
+      const key = r.key.trim();
+      if (!key) return { ...r, hash: undefined, error: undefined };
+      try { return { ...r, hash: await rpc<string>({ type: "sharedCheckKey", input: key }), error: undefined }; }
+      catch (e) { return { ...r, hash: undefined, error: e instanceof Error ? e.message : String(e) }; }
+    })).then((next) => { if (live) setRows((cur) => cur.map((r, i) => (r.key === next[i]?.key ? next[i]! : r))); });
+    return () => { live = false; };
+  }, [keys]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Preview the address once every key is valid
+  const sig = valid ? `${m}|${cosigners.map((c) => c.keyHash).join(",")}` : "";
+  useEffect(() => {
+    setPreview(undefined);
+    setPreviewError("");
+    if (!sig) return;
+    let live = true;
+    void rpc<Preview>({ type: "sharedPreview", required: m, cosigners })
+      .then((p) => { if (live) setPreview(p); })
+      .catch((e) => { if (live) setPreviewError(e instanceof Error ? e.message : String(e)); });
+    return () => { live = false; };
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const create = useAction(async () => {
-    const w = await rpc<SharedWalletInfo>({ type: "sharedCreate", name, required, cosigners, myName: myName || undefined });
+    const w = await rpc<SharedWalletInfo>({ type: "sharedCreate", name, required: m, cosigners, myName: myName || undefined });
     showToast(t("ms2.created"));
-    go(walletRoute(w.id));
+    go(`${walletRoute(w.id)}?created=1`);
   });
-  const n = cosigners.length + 1;
+  const setRow = (i: number, patch: Partial<CosignerRow>) => setRows((cur) => cur.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
   return (
-    <Screen footer={<Button variant="primary" block loading={create.busy} disabled={!cosigners.length} onClick={() => void create.run()} data-testid="ms-create-submit">{t("ms2.create")}</Button>}>
+    <Screen footer={<Button variant="primary" block loading={create.busy} disabled={!preview || preview.exists} onClick={() => void create.run()} data-testid="ms-create-submit">{t("ms2.create")}</Button>}>
       <TopBar title={t("ms2.create")} onBack={() => go("/multisig")} right={<NetworkPill net={netOf(st)} />} />
-      <div className="space-y-3.5 animate-fade-up">
-        <Field label={t("ms2.name")}><input className="field" aria-label={t("ms2.name")} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label={t("ms2.myName")}><input className="field" aria-label={t("ms2.myName")} value={myName} onChange={(e) => setMyName(e.target.value)} /></Field>
-        <Field label={t("ms2.cosigners")} hint={t("ms2.cosignerHint")}>
-          <textarea className="field min-h-[110px] resize-none font-mono text-[11.5px]" aria-label={t("ms2.cosigners")} placeholder={"Bình 3200…\nChi 732b…"} value={lines} onChange={(e) => setLines(e.target.value)} />
-        </Field>
-        <Field label={`${t("ms2.required")} (${required}/${n})`}>
-          <input className="field w-24" type="number" min={1} max={n} aria-label={t("ms2.required")} value={required} onChange={(e) => setRequired(Math.max(1, Math.min(n, Number(e.target.value) || 1)))} />
-        </Field>
+      <div className="space-y-4 animate-fade-up">
+        <div className="space-y-2.5">
+          <SectionLabel className="mb-0">1 · {t("ms2.stepName")}</SectionLabel>
+          <Field label={t("ms2.name")}><input className="field" aria-label={t("ms2.name")} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+          <Field label={t("ms2.myName")}><input className="field" aria-label={t("ms2.myName")} value={myName} onChange={(e) => setMyName(e.target.value)} /></Field>
+        </div>
+
+        <div className="space-y-2">
+          <SectionLabel className="mb-0">2 · {t("ms2.cosigners")}</SectionLabel>
+          <p className="text-[11.5px] text-moon-dim">{t("ms2.cosignerHint")}</p>
+          {rows.map((r, i) => (
+            <Card key={i} className="space-y-1.5 p-2.5" data-testid="ms-cosigner-row">
+              <div className="flex gap-2">
+                <input className="field w-28" aria-label={`${t("ms2.cosignerName")} ${i + 1}`} placeholder={t("ms2.cosignerName")} value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} />
+                <input className={cx("field min-w-0 flex-1 font-mono text-[11px]", r.error && "border-bad/60")} aria-label={`${t("ms2.cosignerKey")} ${i + 1}`} placeholder={t("ms2.cosignerKeyPlaceholder")} value={r.key}
+                  onChange={(e) => setRow(i, { key: e.target.value })}
+                  onPaste={(e) => {
+                    const text = e.clipboardData.getData("text");
+                    if (!text.includes("\n")) return;
+                    e.preventDefault();
+                    const pasted = parseRows(text); // several "name key" lines at once
+                    if (pasted.length) setRows((cur) => [...cur.slice(0, i), ...pasted, ...cur.slice(i + 1)]);
+                  }} />
+                {rows.length > 1 && <button className="text-moon-dim hover:text-bad" aria-label={t("ms2.removeCosigner")} onClick={() => setRows((cur) => cur.filter((_, j) => j !== i))}><Trash2 size={14} /></button>}
+              </div>
+              {r.error ? <p className="text-[11px] text-bad">{r.error}</p> : r.hash && <p className="flex items-center gap-1 text-[11px] text-ok"><Check size={12} /> {shorten(r.hash, 10)}</p>}
+            </Card>
+          ))}
+          <Button block onClick={() => setRows((cur) => [...cur, { name: "", key: "" }])} data-testid="ms-add-cosigner"><Plus size={15} /> {t("ms2.addCosigner")}</Button>
+        </div>
+
+        <div className="space-y-1.5">
+          <SectionLabel className="mb-0">3 · {t("ms2.required")}</SectionLabel>
+          <div className="flex items-center gap-3">
+            <input type="range" className="flex-1 accent-[rgb(var(--accent))]" min={1} max={n} value={m} aria-label={t("ms2.required")} onChange={(e) => setRequired(Number(e.target.value))} />
+            <span className="w-24 text-right text-[13px] font-medium text-ink" data-testid="ms-required">{t("ms2.of", { m: String(m), n: String(n) })}</span>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <SectionLabel className="mb-0">4 · {t("ms2.previewTitle")}</SectionLabel>
+          {preview ? (
+            <Card className="space-y-2 p-3" data-testid="ms-preview">
+              <p className="text-[11.5px] text-moon-dim">{t("ms2.previewHint")}</p>
+              <CopyField value={preview.address} testId="ms-preview-address" />
+              {preview.exists && <Notice tone="warn">{t("ms2.previewExists")}</Notice>}
+            </Card>
+          ) : <p className="text-[11.5px] text-moon-dim">{previewError || t("ms2.previewWaiting")}</p>}
+        </div>
         <ErrorText error={create.error} />
       </div>
     </Screen>
@@ -214,7 +299,7 @@ function PreviewCard({ p, required, mine, own }: { p: TxPreview; required: numbe
   );
 }
 
-function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => void }) {
+function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: string) => void; created?: boolean }) {
   const t = useT();
   const net = netOf(st);
   const [w, setW] = useState<SharedWalletInfo | null>();
@@ -265,6 +350,21 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
       <Screen>
         <TopBar title={w.name} onBack={() => go("/multisig")} right={<NetworkPill net={net} />} />
         <div className="space-y-4 animate-fade-up">
+          {created && (
+            <Card className="space-y-2.5 border-ok/40 p-3" data-testid="ms-created">
+              <div className="flex items-center gap-1.5 text-[13px] font-semibold text-ok"><Check size={15} /> {t("ms2.created")}</div>
+              <p className="text-[11.5px] text-moon-dim">{t("ms2.createdHint")}</p>
+              <CopyField value={w.address} testId="ms-created-address" />
+              <Button block onClick={() => void rpc<string>({ type: "sharedExport", id }).then((j) => setShare({ title: t("ms2.shareWallet"), value: j, filename: `multisig-wallet-${w.paymentScriptHash.slice(0, 8)}.json` }))} data-testid="ms-created-share"><Share2 size={15} /> {t("ms2.shareWallet")}</Button>
+              {!w.registeredTx && canSign && (
+                <>
+                  <p className="text-[11.5px] text-moon-dim">{t("ms2.registerHint")}</p>
+                  <Button variant="primary" block loading={register.busy} onClick={() => void register.run()} data-testid="ms-created-register">{t("ms2.register")}</Button>
+                  <ErrorText error={register.error} />
+                </>
+              )}
+            </Card>
+          )}
           <Card className="space-y-2 p-3">
             <div className="flex items-end justify-between">
               <div><div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("ms2.balance")}</div><div className="text-[26px] font-semibold tabular-nums text-ink" data-testid="ms-balance">{bal === undefined ? t("ms2.balanceLoading") : fmtAda(bal)} <span className="text-[13px] text-moon-dim">{net.unit}</span></div></div>

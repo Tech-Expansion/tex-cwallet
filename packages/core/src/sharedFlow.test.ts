@@ -399,3 +399,28 @@ describe("AI-11: paste anything, merge signatures automatically", () => {
   });
 });
 
+describe("AI-13: preview the multisig address before creating it", () => {
+  it("previewShared matches createShared and saves nothing", async () => {
+    const kb = (await B.sharedKeyInfo(0)).keyHash, kc = (await C.sharedKeyInfo(0)).keyHash;
+    const cosigners = [{ name: "Bình", keyHash: kb }, { name: "Chi", keyHash: kc }];
+    const p = await A.previewShared({ required: 2, cosigners });
+    expect(p).toMatchObject({ required: 2, total: 3, exists: false });
+    expect(p.address).toMatch(/^addr_test1w/);
+    expect(A.listShared()).toHaveLength(0); // nothing saved
+    // key order does not change the address
+    expect((await A.previewShared({ required: 2, cosigners: [...cosigners].reverse() })).address).toBe(p.address);
+    // a CIP-1854 public key gives the same address as its key hash
+    expect((await A.previewShared({ required: 2, cosigners: [{ name: "Bình", keyHash: sharedPublicKey(M[1]!.split(" "), 0) }, cosigners[1]!] })).address).toBe(p.address);
+    const w = await A.createShared({ name: "Quỹ", required: 2, cosigners });
+    expect(w.address).toBe(p.address);
+    expect((await A.previewShared({ required: 2, cosigners })).exists).toBe(true);
+  });
+
+  it("previewShared rejects bad settings like createShared", async () => {
+    const kb = (await B.sharedKeyInfo(0)).keyHash;
+    await expect(A.previewShared({ required: 3, cosigners: [{ name: "B", keyHash: kb }] })).rejects.toThrow();
+    await expect(A.previewShared({ required: 1, cosigners: [{ name: "B", keyHash: "xyz" }] })).rejects.toThrow();
+    await expect(A.previewShared({ required: 1, cosigners: [{ name: "B", keyHash: (await A.sharedKeyInfo(0)).keyHash }] })).rejects.toThrow(/tự động/);
+  });
+});
+

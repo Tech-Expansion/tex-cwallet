@@ -1,4 +1,4 @@
-import { summarizeTx, serializeBalance, serializeSendPreview, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeBalance, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -54,6 +54,8 @@ export type Req =
   | { type: "sharedDiscover" }
   | { type: "sharedCreate"; name: string; required: number; cosigners: { name: string; keyHash: string }[]; myIndex?: number; myName?: string }
   | { type: "sharedImport"; input: string; name?: string }
+  | { type: "sharedPreview"; required: number; cosigners: { name: string; keyHash: string }[]; myIndex?: number }
+  | { type: "sharedCheckKey"; input: string }
   | { type: "sharedExport"; id: string }
   | { type: "sharedRemove"; id: string }
   | { type: "sharedBalance"; id: string }
@@ -189,6 +191,10 @@ export class WalletApi {
         return m.discoverShared();
       case "sharedCreate":
         return m.createShared(req);
+      case "sharedPreview":
+        return m.previewShared({ required: req.required, cosigners: req.cosigners, myIndex: req.myIndex });
+      case "sharedCheckKey":
+        return cosignerKeyHash(req.input);
       case "sharedImport":
         return m.importShared(req.input, req.name);
       case "sharedExport":

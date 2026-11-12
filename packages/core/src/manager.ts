@@ -434,7 +434,8 @@ export class WalletManager {
    * Tạo ví multisig mới. `cosigners` là khóa của những người khác (key hash hoặc địa chỉ). Khóa của mình
    * (chỉ số `myIndex`) được thêm tự động. Script giống nhau ở mọi cosigner nên cần chia sẻ qua đăng ký on-chain hoặc file.
    */
-  async createShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }): Promise<SharedEntry> {
+  /** Build the multisig wallet for these settings without saving it (shared by previewShared and createShared). */
+  private async buildShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }) {
     this.requireUnlocked();
     const owner = this.activeMnemonicId();
     const y = p.myIndex ?? (await this.sharedNextIndex()).y;
@@ -444,6 +445,17 @@ export class WalletManager {
     const signers = [{ name: p.myName || "Tôi", keyHash: mine }, ...others];
     const script = buildPaymentScript(p.required, signers.map((s) => s.keyHash));
     const w = makeSharedWallet({ name: p.name.trim() || "Ví multisig", network: this.state.network, paymentScript: script, signers, myIndex: y });
+    return { w, owner };
+  }
+
+  /** Address and script hash the wallet would get, before creating it (AI-13). Nothing is saved. */
+  async previewShared(p: { required: number; cosigners: Signer[]; myIndex?: number }): Promise<{ address: string; paymentScriptHash: string; required: number; total: number; exists: boolean }> {
+    const { w } = await this.buildShared({ name: "", ...p });
+    return { address: w.address, paymentScriptHash: w.paymentScriptHash, required: w.required, total: w.signers.length, exists: this.sharedList().some((x) => x.id === w.id) };
+  }
+
+  async createShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }): Promise<SharedEntry> {
+    const { w, owner } = await this.buildShared(p);
     if (this.sharedList().some((x) => x.id === w.id)) throw new SharedError("INVALID_CONFIG", "Ví này đã tồn tại");
     const entry = { ...w, ownerWalletId: owner };
     await this.persistShared(entry);

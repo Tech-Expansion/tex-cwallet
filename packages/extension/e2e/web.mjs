@@ -67,8 +67,10 @@ try {
   await page.waitForFunction(() => /^[0-9a-f]{56}$/.test(document.querySelector("[data-testid=ms-keyhash]")?.textContent ?? ""), null, { timeout: 15000 });
   await page.getByTestId("ms-new").click();
   await page.getByLabel("Tên ví").fill("Quỹ web");
-  await page.getByLabel("Cosigner khác").fill(`Bình ${"ab".repeat(28)}`);
+  await page.getByLabel("Tên 1", { exact: true }).fill("Bình");
+  await page.getByLabel("Key cosigner 1").fill("ab".repeat(28));
   await page.getByLabel("Số chữ ký tối thiểu").fill("2");
+  await page.getByTestId("ms-preview-address").waitFor();
   await page.getByTestId("ms-create-submit").click();
   await page.getByTestId("ms-address").waitFor();
   assert.match(await page.getByTestId("ms-address").innerText(), /^addr_test1w/);
