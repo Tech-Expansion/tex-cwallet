@@ -161,6 +161,22 @@ amounts are exact.
 Fees and min-UTxO always come from the live preprod protocol parameters; if they cannot be fetched, the wallet
 refuses to build the transaction.
 
+### Activity and CSV export
+
+**Hoạt động** lists transactions newest first, 10 at a time (**Tải thêm** for more). Each row shows the date,
+the direction (received, sent or self transfer), the net ADA change with the fee included, how many tokens
+changed, the fee you paid and the first line of a CIP-20 message. Tap a row for the details: every input and
+output (your address highlighted), token changes, the fee, the block, the metadata as JSON and a link to the
+preprod explorer. When you hold multisig wallets, a selector at the top switches to the history of one of them.
+
+The file icon exports a CSV for a date range: `date_utc, tx_hash, direction, net_ada, fee_paid_ada,
+token_changes, memo`. Amounts are exact (ADA with 6 decimals, token quantities as integers; never floats), the
+file is UTF-8 with a BOM so spreadsheets read Vietnamese text, and messages that start with `=`, `+`, `-` or `@`
+get a leading `'` so a spreadsheet does not run them as formulas. An export is limited to 2,000 transactions.
+
+Koios and Blockfrost give the same result. Koios needs one request per page; Blockfrost needs 2 per transaction
+in the list and 3 per transaction for details and CSV (it has no batch endpoint).
+
 ### Multisig (m-of-n)
 
 Open the **Multisig** tab. Each person uses their own wallet; nobody shares private keys. Anything a cosigner

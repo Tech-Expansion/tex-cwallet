@@ -1,4 +1,4 @@
-import { summarizeTx, serializeBalance, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeBalance, serializeTxDetail, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -45,6 +45,9 @@ export type Req =
   | { type: "balance" }
   | { type: "walletBalance" }
   | { type: "history"; limit?: number }
+  | { type: "historyPage"; page?: number; count?: number; sharedId?: string }
+  | { type: "txDetail"; hash: string; sharedId?: string }
+  | { type: "historyCsv"; from: number; to: number; sharedId?: string }
   | { type: "prepareSend"; to: string; lovelace?: string; assets?: { unit: string; quantity: string }[] }
   | { type: "confirmSend"; txHash: string; password: string }
   | { type: "exportMnemonic"; id: string; password: string }
@@ -174,6 +177,14 @@ export class WalletApi {
         return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
+      case "historyPage": {
+        const p = await m.historyPage({ page: req.page, count: req.count, sharedId: req.sharedId });
+        return { items: p.items.map(serializeTxDetail), hasMore: p.hasMore };
+      }
+      case "txDetail":
+        return serializeTxDetail(await m.txDetail(req.hash, req.sharedId));
+      case "historyCsv":
+        return m.exportHistoryCsv(Number(req.from), Number(req.to), req.sharedId);
       case "prepareSend":
         return serializeSendPreview(await m.prepareSend({
           to: req.to,

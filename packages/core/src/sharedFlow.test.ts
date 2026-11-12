@@ -43,6 +43,8 @@ const providers: ProviderFactory = () => ({
     getTip: async () => ({ hash: "b".repeat(64), epoch: 180, slot: tipSlot, blockHeight: 1, blockTime: 0 }),
     getBalance: async () => [{ unit: "lovelace", quantity: "80000000" }],
     getHistory: async () => [],
+    listAddressTxs: async () => [],
+    getTxs: async () => [],
     getProtocolParams: async () => DEFAULT_PROTOCOL_PARAMETERS,
     findRegistrations: async (creds: string[]) => onChain.filter((r) => JSON.stringify(r.payment).split('"').some((x) => creds.includes(x))),
     txExists: async (h: string) => landed.has(h),

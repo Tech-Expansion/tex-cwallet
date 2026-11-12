@@ -1,6 +1,7 @@
 import { castProtocol } from "@meshsdk/common";
 import type { Protocol } from "@meshsdk/core";
 import { NETWORKS, type NetworkName } from "./networks";
+import type { RawIO, RawTx, TxRef } from "./history";
 import { parseRegistration, registrationHasKey, REGISTRATION_LABEL, type Registration } from "./registration";
 
 export interface TxSummary {
@@ -116,6 +117,37 @@ export class KoiosClient {
         for (const a of utxo.asset_list ?? []) add(a.policy_id + a.asset_name, a.quantity);
     }
     return [...totals].map(([unit, q]) => ({ unit, quantity: q.toString() }));
+  }
+
+  /** Newest first. Koios accepts PostgREST paging/order on POST endpoints. */
+  async listAddressTxs(address: string, page: number, count: number): Promise<TxRef[]> {
+    const q = `order=block_height.desc,tx_hash.asc&limit=${count}&offset=${(page - 1) * count}`;
+    const rows = await this.post<{ tx_hash: string; block_time: number; block_height: number }[]>(`/address_txs?${q}`, { _addresses: [address] });
+    return rows.map((r) => ({ hash: r.tx_hash, blockTime: Number(r.block_time), blockHeight: Number(r.block_height) }));
+  }
+
+  /** tx_info in batches of 50; metadata comes in the same response, so it is always included. */
+  async getTxs(hashes: string[], _withMetadata = true): Promise<RawTx[]> {
+    const io = (x: any): RawIO => ({
+      address: x.payment_addr?.bech32 ?? "",
+      lovelace: String(x.value ?? 0),
+      assets: (x.asset_list ?? []).map((a: any) => ({ unit: a.policy_id + a.asset_name, quantity: String(a.quantity) })),
+    });
+    const out: RawTx[] = [];
+    for (let i = 0; i < hashes.length; i += 50) {
+      const rows = await this.post<any[]>("/tx_info", { _tx_hashes: hashes.slice(i, i + 50), _inputs: true, _metadata: true, _assets: true });
+      for (const t of rows)
+        out.push({
+          hash: t.tx_hash,
+          blockTime: Number(t.tx_timestamp ?? t.block_time ?? 0),
+          blockHeight: Number(t.block_height ?? 0),
+          fee: String(t.fee ?? 0),
+          inputs: (t.inputs ?? []).map(io),
+          outputs: (t.outputs ?? []).map(io),
+          metadata: t.metadata && typeof t.metadata === "object" ? t.metadata : {},
+        });
+    }
+    return out;
   }
 
   async getHistory(address: string, limit = 20): Promise<TxSummary[]> {

@@ -37,6 +37,28 @@ describe("WalletApi", () => {
     expect(await api.handle({ type: "walletBalance" })).toEqual({ lovelace: "0", ada: "0.000000", assets: [] });
   });
 
+  it("AI-21: historyPage / txDetail / historyCsv trả số dạng chuỗi, CSV đúng khoảng ngày", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    const me = ((await api.handle({ type: "account" })) as any).baseAddress as string;
+    const h = (n: number) => n.toString(16).padStart(64, "0");
+    const raw = (n: number) => ({ hash: h(n), blockTime: 1_700_000_000 + n, blockHeight: n, fee: "170000", inputs: [], outputs: [{ address: me, lovelace: "2000000", assets: [{ unit: "ab".repeat(28) + "01", quantity: "18446744073709551615" }] }], metadata: { "674": { msg: ["hi"] } } });
+    const chain = (api.manager as any).p().chain;
+    Object.assign(chain, {
+      listAddressTxs: async (_a: string, page: number) => (page === 1 ? [3, 2, 1].map((n) => ({ hash: h(n), blockTime: 1_700_000_000 + n, blockHeight: n })) : []),
+      getTxs: async (hs: string[]) => hs.map((x) => raw(parseInt(x, 16))),
+    });
+    (api.manager as any).p = () => ({ ...providers("preprod", {}), chain });
+    const page: any = await api.handle({ type: "historyPage", page: 1, count: 10 });
+    expect(page.hasMore).toBe(false);
+    expect(page.items[0]).toMatchObject({ hash: h(3), direction: "in", netLovelace: "2000000", feePaid: "0", memo: "hi", tokens: [{ quantity: "18446744073709551615" }] });
+    expect(await api.handle({ type: "txDetail", hash: h(2) })).toMatchObject({ hash: h(2), fee: "170000" });
+    await expect(api.handle({ type: "txDetail", hash: "nope" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const csv = (await api.handle({ type: "historyCsv", from: 1_700_000_001, to: 1_700_000_002 })) as string;
+    expect(csv.trim().split("\r\n").map((l) => l.split(",")[1])).toEqual(["tx_hash", h(2), h(1)]);
+    await expect(api.handle({ type: "historyPage", sharedId: "preprod-nope" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
   it("thao tác khi khóa bị từ chối; không lộ ví trong state", async () => {
     await api.handle({ type: "setup", password: PW });
     await api.handle({ type: "addWallet", name: "A", mnemonic: M });
