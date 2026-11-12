@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type DragEvent } from "react";
 import { Check, ExternalLink, FileDown, Plus, Radar, ShieldCheck, Trash2, Users } from "lucide-react";
-import { rpc, fmtAda, parseAda, shorten, type AppState, type RequestItem, type SharedWalletInfo, type TxPreview } from "./rpc";
+import { rpc, fmtAda, parseAda, shorten, type AppState, type RequestItem, type SharedInput, type SharedWalletInfo, type TxPreview } from "./rpc";
 import { useAction } from "./hooks";
 import { useT } from "./i18n";
-import { Avatar, Button, Card, CopyField, ErrorText, Field, Notice, Screen, SectionLabel, SignSheet, Spinner, TopBar, cx, showToast, useCopy } from "./ui/ui";
+import { Avatar, Button, Card, CopyField, ErrorText, Field, Notice, Screen, SectionLabel, SignSheet, Spinner, TopBar, cx, showToast } from "./ui/ui";
 import { NetworkPill, netOf } from "./Home";
 
 export const MESH_MULTISIG_URL = "https://multisig.meshjs.dev";
@@ -17,9 +17,60 @@ export function Multisig({ st, route, go }: { st: AppState; route: string; go: (
     return <Screen><TopBar title={t("ms2.title")} right={<NetworkPill net={netOf(st)} />} /><Notice tone="warn">{t("ms2.walletWatch")}</Notice></Screen>;
   const w = route.match(/^\/multisig\/w\/(.+)$/);
   if (w) return <Detail st={st} id={w[1]!} go={go} />;
-  if (route === "/multisig/new") return <Create st={st} go={go} />;
+  if (route.startsWith("/multisig/new")) return <Create st={st} go={go} prefillKey={new URLSearchParams(route.split("?")[1] ?? "").get("key") ?? ""} />;
   if (route === "/multisig/import") return <Import go={go} />;
   return <List st={st} go={go} />;
+}
+
+/**
+ * One box for anything a cosigner sends (AI-11): a cosigner key, wallet data or a sign request, pasted
+ * or dropped as a file. The wallet detects what it is and opens the right screen; a sign request is
+ * checked and merged with the stored copy of the same transaction.
+ */
+function PasteBox({ go, onReceived }: { go: (r: string) => void; onReceived?: (walletId: string) => void }) {
+  const t = useT();
+  const [text, setText] = useState("");
+  const [drag, setDrag] = useState(false);
+  const open = useAction(async (input?: string) => {
+    const value = (input ?? text).trim();
+    const d = await rpc<SharedInput>({ type: "sharedDetect", input: value });
+    if (d.kind === "signRequest") {
+      const r = await rpc<{ walletId: string; preview: TxPreview; merged: boolean }>({ type: "sharedReceive", request: value });
+      const w = (await rpc<SharedWalletInfo[]>({ type: "sharedList" })).find((x) => x.id === r.walletId);
+      showToast(t(r.merged ? "ms2.requestMerged" : "ms2.requestAdded", { n: String(new Set(r.preview.signedBy).size), m: String(w?.required ?? "?") }));
+      setText("");
+      if (onReceived) onReceived(r.walletId);
+      else go(walletRoute(r.walletId));
+    } else if (d.kind === "wallet") {
+      const w = await rpc<SharedWalletInfo>({ type: "sharedImport", input: value });
+      showToast(t("ms2.imported"));
+      setText("");
+      go(walletRoute(w.id));
+    } else if (d.kind === "cosignerKey") {
+      setText("");
+      go(`/multisig/new?key=${d.keyHash}`);
+    } else throw new Error(t("ms2.unknownInput"));
+  });
+  const onDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDrag(false);
+    const file = e.dataTransfer.files[0];
+    const value = file ? (await file.text()).trim() : e.dataTransfer.getData("text").trim();
+    if (!value) return;
+    setText(value);
+    void open.run(value);
+  };
+  return (
+    <Card className={cx("space-y-2 p-3", drag && "ring-2 ring-accent")} data-testid="ms-paste"
+      onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={(e) => void onDrop(e)}>
+      <SectionLabel className="mb-0">{t("ms2.pasteTitle")}</SectionLabel>
+      <textarea className="field min-h-[64px] resize-none font-mono text-[11px]" aria-label={t("ms2.pasteTitle")} placeholder={t("ms2.pasteAny")} value={text}
+        onChange={(e) => { setText(e.target.value); open.setError(""); }}
+        onPaste={(e) => { const v = e.clipboardData.getData("text").trim(); if (!v) return; e.preventDefault(); setText(v); void open.run(v); }} />
+      <Button block disabled={!text.trim()} loading={open.busy} onClick={() => void open.run()} data-testid="ms-paste-open">{t("ms2.open")}</Button>
+      <ErrorText error={open.error} />
+    </Card>
+  );
 }
 
 function KeyCard() {
@@ -62,6 +113,7 @@ function List({ st, go }: { st: AppState; go: (r: string) => void }) {
           <Button onClick={() => go("/multisig/import")} data-testid="ms-import"><FileDown size={15} /> {t("ms2.import")}</Button>
         </div>
         <ErrorText error={discover.error || load.error} />
+        <PasteBox go={go} />
         {!wallets ? <div className="flex justify-center py-6"><Spinner size={20} /></div> : wallets.length === 0 ? (
           <p className="py-4 text-center text-[12px] text-moon-dim">{t("ms2.empty")}</p>
         ) : (
@@ -86,12 +138,12 @@ function List({ st, go }: { st: AppState; go: (r: string) => void }) {
   );
 }
 
-function Create({ st, go }: { st: AppState; go: (r: string) => void }) {
+function Create({ st, go, prefillKey }: { st: AppState; go: (r: string) => void; prefillKey: string }) {
   const t = useT();
   const [name, setName] = useState("");
   const [myName, setMyName] = useState("");
   const [required, setRequired] = useState(2);
-  const [lines, setLines] = useState("");
+  const [lines, setLines] = useState(prefillKey ? `Cosigner 2 ${prefillKey}` : "");
   const cosigners = lines.split("\n").map((l) => l.trim()).filter(Boolean).map((l, i) => {
     const m = l.match(/^(.*?)[\s,:;]+(\S+)$/);
     return m ? { name: m[1]!.trim() || `Cosigner ${i + 2}`, keyHash: m[2]! } : { name: `Cosigner ${i + 2}`, keyHash: l };
@@ -166,13 +218,10 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
   const [bal, setBal] = useState<string>();
   const [myKey, setMyKey] = useState("");
   const [reqs, setReqs] = useState<RequestItem[]>();
-  const [signFor, setSignFor] = useState<{ kind: "propose" } | { kind: "sign"; request: string } | undefined>();
+  const [signFor, setSignFor] = useState<{ kind: "propose" } | { kind: "sign"; request: string; preview: TxPreview } | undefined>();
   const [to, setTo] = useState("");
   const [amt, setAmt] = useState("");
   const [memo, setMemo] = useState("");
-  const [paste, setPaste] = useState("");
-  const [review, setReview] = useState<{ request: string; preview: TxPreview; memo?: string; iSigned: boolean }>();
-  const { copy } = useCopy();
 
   const reload = useCallback(async () => {
     const list = await rpc<SharedWalletInfo[]>({ type: "sharedList" });
@@ -196,13 +245,11 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
       setTo(""); setAmt(""); setMemo("");
     } else {
       await rpc({ type: "sharedSign", request: signFor.request, password });
-      setReview(undefined); setPaste("");
     }
     setSignFor(undefined);
     await reload();
   });
   const submit = useAction(async (request: string) => { const h = await rpc<string>({ type: "sharedSubmit", request }); showToast(t("ms2.submitted"), net.explorerTxUrl + h); await reload(); });
-  const check = useAction(async () => { setReview(await rpc({ type: "sharedInspect", request: paste })); });
   const remove = useAction(async () => { if (!w || !confirm(t("ms2.removeConfirm", { name: w.name }))) return; await rpc({ type: "sharedRemove", id }); go("/multisig"); });
 
   if (w === undefined) return <div className="grid h-full place-items-center"><Spinner /></div>;
@@ -263,7 +310,7 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
                         <Button onClick={() => { void navigator.clipboard?.writeText(r.request); showToast(t("ms2.copied")); }} data-testid="ms-copy-request">{t("ms2.copyReq")}</Button>
                         {r.preview.enough
                           ? <Button variant="primary" loading={submit.busy} disabled={r.stale || r.expired} onClick={() => void submit.run(r.request)} data-testid="ms-submit">{t("ms2.submit")}</Button>
-                          : <Button variant="primary" disabled={r.iSigned || !canSign || r.stale || r.expired} onClick={() => { act.setError(""); setSignFor({ kind: "sign", request: r.request }); }} data-testid="ms-sign">{t("ms2.sign")}</Button>}
+                          : <Button variant="primary" disabled={r.iSigned || !canSign || r.stale || r.expired} onClick={() => { act.setError(""); setSignFor({ kind: "sign", request: r.request, preview: r.preview }); }} data-testid="ms-sign">{t("ms2.sign")}</Button>}
                       </div>
                       <button className="text-[11px] text-moon-dim hover:text-bad" onClick={() => void rpc({ type: "sharedDismiss", id, request: r.request }).then(reload)}>{t("ms2.dismiss")}</button>
                     </Card>
@@ -274,18 +321,7 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
             <ErrorText error={submit.error} />
           </div>
 
-          <Card className="space-y-2.5 p-3">
-            <SectionLabel className="mb-0">{t("ms2.pasteReq")}</SectionLabel>
-            <textarea className="field min-h-[70px] resize-none font-mono text-[11px]" aria-label={t("ms2.pasteReq")} value={paste} onChange={(e) => { setPaste(e.target.value); setReview(undefined); }} />
-            {review ? (
-              <div className="space-y-2" data-testid="ms-review">
-                {review.memo && <div className="text-[12.5px] font-medium text-ink">{review.memo}</div>}
-                <PreviewCard p={review.preview} required={w.required} mine={review.iSigned} own={w.address} />
-                <Button variant="primary" block disabled={review.iSigned || !canSign} onClick={() => { act.setError(""); setSignFor({ kind: "sign", request: paste }); }} data-testid="ms-review-sign">{t("ms2.sign")}</Button>
-              </div>
-            ) : <Button block disabled={!paste.trim()} loading={check.busy} onClick={() => void check.run()} data-testid="ms-check">{t("ms2.check")}</Button>}
-            <ErrorText error={check.error} />
-          </Card>
+          <PasteBox go={go} onReceived={(wid) => (wid === id ? void reload() : go(walletRoute(wid)))} />
 
           <Card className="space-y-2 p-3">
             {w.registeredTx ? <div className="flex items-center gap-1.5 text-[12px] text-ok"><Check size={14} /> {t("ms2.registered")}</div> : canSign && (
@@ -305,7 +341,7 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
         <SignSheet title={t("ms2.reviewTitle")} onSign={(pw) => void act.run(pw)} onCancel={() => setSignFor(undefined)} busy={act.busy} error={act.error}>
           {signFor.kind === "propose"
             ? <Card className="space-y-1 p-3"><div className="text-[22px] font-semibold tabular-nums text-ink">{amt} {net.unit}</div><div className="break-all font-mono text-[11.5px] text-moon">{to.trim()}</div></Card>
-            : review && <Card className="p-3"><PreviewCard p={review.preview} required={w.required} own={w.address} /></Card>}
+            : <Card className="p-3"><PreviewCard p={signFor.preview} required={w.required} own={w.address} /></Card>}
         </SignSheet>
       )}
     </>

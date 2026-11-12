@@ -67,6 +67,8 @@ export type Req =
   | { type: "sharedMerge"; a: string; b: string }
   | { type: "sharedSubmit"; request: string }
   | { type: "sharedDismiss"; id: string; request: string }
+  | { type: "sharedDetect"; input: string }
+  | { type: "sharedReceive"; request: string }
   | { type: "pendingApprovals" }
   | { type: "resolveApproval"; id: string; ok: boolean };
 
@@ -214,6 +216,10 @@ export class WalletApi {
         return m.mergeRequests(req.a, req.b);
       case "sharedSubmit":
         return m.submitRequest(req.request);
+      case "sharedDetect":
+        return m.detectSharedInput(req.input);
+      case "sharedReceive":
+        return m.receiveRequest(req.request);
       case "sharedDismiss":
         return m.dismissRequest(req.id, req.request);
       case "pendingApprovals":

@@ -167,6 +167,9 @@ describe("WalletApi – multisig", () => {
     const items: any[] = (await A.handle({ type: "sharedRequests", id: w.id })) as any[];
     expect(items[0].preview.signedBy.length).toBe(1);
     expect(items[0].memo).toBe("thử");
+    expect(await B.handle({ type: "sharedDetect", input: req })).toEqual({ kind: "signRequest", walletId: w.id });
+    expect(await B.handle({ type: "sharedDetect", input: kb })).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect(((await B.handle({ type: "sharedReceive", request: req })) as any).merged).toBe(false);
     const signed: any = await B.handle({ type: "sharedSign", request: req, password: PW });
     expect(signed.preview.enough).toBe(true);
     expect(await B.handle({ type: "sharedSubmit", request: signed.request })).toHaveLength(64);

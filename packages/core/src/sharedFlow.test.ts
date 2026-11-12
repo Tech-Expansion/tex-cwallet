@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Serialization, resolveTxHash } from "@meshsdk/core-cst";
 import { DEFAULT_PROTOCOL_PARAMETERS } from "@meshsdk/common";
-import { WalletManager, MemoryStore, parseRegistration, signWithSharedKey, attachWitnesses, SHARED_TTL_SLOTS, type ProviderFactory, type Registration } from "./index";
+import { WalletManager, MemoryStore, parseRegistration, signWithSharedKey, attachWitnesses, sharedPublicKey, scriptCborOf, SHARED_TTL_SLOTS, type ProviderFactory, type Registration } from "./index";
 
 const M = [
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
@@ -339,6 +339,63 @@ describe("AI-8: đề xuất → co-sign → submit khi đủ chữ ký", () => 
     expect(await B.submitRequest(B.requestCbor(signed.request))).toHaveLength(64);
     const stranger = await user(2);
     await expect(stranger.inspectRequest(cbor)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("AI-11: paste anything, merge signatures automatically", () => {
+  async function setup2of3() {
+    const w = await createWallet();
+    await B.importShared(A.exportShared(w.id));
+    await C.importShared(A.exportShared(w.id));
+    return w;
+  }
+
+  it("detectSharedInput recognizes keys, wallet data and sign requests", async () => {
+    const w = await setup2of3();
+    const kb = (await B.sharedKeyInfo(0)).keyHash;
+    expect(await A.detectSharedInput(kb)).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect(await A.detectSharedInput(`  ${kb.toUpperCase()}\n`)).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect(await A.detectSharedInput(sharedPublicKey(M[1]!.split(" "), 0))).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect((await A.detectSharedInput(DEST)).kind).toBe("cosignerKey"); // address with a payment key
+    expect(await A.detectSharedInput(A.exportShared(w.id))).toEqual({ kind: "wallet" });
+    expect(await A.detectSharedInput(scriptCborOf(w.paymentScript))).toEqual({ kind: "wallet" });
+    const req = await A.proposeShared(w.id, DEST, 3_000_000n);
+    expect(await B.detectSharedInput(req)).toEqual({ kind: "signRequest", walletId: w.id });
+    expect(await B.detectSharedInput(A.requestCbor(req))).toEqual({ kind: "signRequest", walletId: w.id });
+    for (const junk of ["", "hello", "{}", "{not json", "abcd", w.address]) expect((await A.detectSharedInput(junk)).kind).toBe("unknown");
+    await expect(A.detectSharedInput("ab".repeat(64))).rejects.toThrow(/bí mật/);
+    await expect(A.detectSharedInput("addr_xsk1qqqq")).rejects.toThrow(/bí mật/);
+  });
+
+  it("receiveRequest stores a new request, then merges a copy with more signatures", async () => {
+    const w = await setup2of3();
+    const base = await A.proposeShared(w.id, DEST, 3_000_000n); // A signed (1/2)
+    const first = await B.receiveRequest(base);
+    expect(first).toMatchObject({ walletId: w.id, merged: false });
+    expect(first.preview.signedBy).toHaveLength(1);
+    expect(await B.listRequests(w.id)).toHaveLength(1);
+    const fromC = (await C.signRequest(base, PW)).request; // C signs its own copy (2/2)
+    const second = await B.receiveRequest(fromC);
+    expect(second.merged).toBe(true);
+    expect(new Set(second.preview.signedBy).size).toBe(2);
+    expect(second.preview.enough).toBe(true);
+    expect(await B.listRequests(w.id)).toHaveLength(1); // still one request, now complete
+    expect(await B.submitRequest(second.request)).toHaveLength(64);
+  });
+
+  it("receiveRequest keeps every safety check", async () => {
+    const w = await setup2of3();
+    const req = JSON.parse(await A.proposeShared(w.id, DEST, 3_000_000n));
+    const outsider = "letter advice cage absurd amount doctor acoustic avoid letter advice cage above".split(" ");
+    await expect(B.receiveRequest(JSON.stringify({ ...req, tx: attachWitnesses(req.tx, [await signWithSharedKey(outsider, 9, req.tx)]) }))).rejects.toMatchObject({ code: "NOT_SIGNER" });
+    const t = Serialization.Transaction.fromCbor(req.tx as never);
+    const body = t.body();
+    body.setFee(body.fee() + 1n);
+    t.setBody(body);
+    await expect(B.receiveRequest(JSON.stringify({ ...req, tx: t.toCbor() }))).rejects.toMatchObject({ code: "INVALID_SIGNATURE" });
+    tipSlot = 1_000 + SHARED_TTL_SLOTS;
+    await expect(B.receiveRequest(JSON.stringify(req))).rejects.toMatchObject({ code: "EXPIRED" });
+    expect(await B.listRequests(w.id)).toHaveLength(0);
   });
 });
 

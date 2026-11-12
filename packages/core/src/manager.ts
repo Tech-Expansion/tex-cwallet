@@ -39,6 +39,13 @@ interface State {
   check?: EncryptedBlob;
 }
 
+/** What a pasted text is (AI-11). */
+export type SharedInput =
+  | { kind: "signRequest"; walletId: string }
+  | { kind: "wallet" }
+  | { kind: "cosignerKey"; keyHash: string }
+  | { kind: "unknown" };
+
 /** Ví multisig kèm thông tin: ví nào của mình ký và dùng chỉ số khóa y nào. */
 export interface SharedEntry extends SharedWallet { ownerWalletId: string }
 
@@ -523,6 +530,53 @@ export class WalletManager {
     if (p.ttl === undefined) throw new SharedError("INVALID_TX", "Giao dịch không có thời hạn hiệu lực; hãy đề xuất lại");
     const tip = await this.p().chain.getTip();
     if (tip.slot >= p.ttl) throw new SharedError("EXPIRED", `Giao dịch đã hết hạn (slot ${p.ttl}, hiện tại ${tip.slot}); hãy đề xuất lại`);
+  }
+
+  /**
+   * Classify pasted text without changing state (AI-11): a sign request (wallet JSON envelope or raw
+   * transaction CBOR carrying the script of a known wallet), wallet data (exported JSON, registration
+   * transaction or native script CBOR) or a cosigner key (key hash, CIP-1854 public key or address).
+   * A pasted private key throws instead of being classified.
+   */
+  async detectSharedInput(input: string): Promise<SharedInput> {
+    const text = input.trim();
+    if (!text) return { kind: "unknown" };
+    if (text.startsWith("{")) {
+      let j: { kind?: unknown; walletId?: unknown; paymentScript?: unknown };
+      try { j = JSON.parse(text); } catch { return { kind: "unknown" }; }
+      if (j.kind === "cardano-multisig-sign-request" && typeof j.walletId === "string") return { kind: "signRequest", walletId: j.walletId };
+      if (j.paymentScript) return { kind: "wallet" };
+      return { kind: "unknown" };
+    }
+    if (/^[0-9a-f]+$/i.test(text)) {
+      if (/^([0-9a-f]{56}|[0-9a-f]{64})$/i.test(text)) return { kind: "cosignerKey", keyHash: await cosignerKeyHash(text) };
+      if (/^[0-9a-f]{128}$/i.test(text)) await cosignerKeyHash(text); // throws: looks like a private key
+      if (parseRegistration(text)) return { kind: "wallet" };
+      try { return { kind: "signRequest", walletId: this.decodeRequest(text).walletId }; } catch { /* not a transaction of a known wallet */ }
+      try { scriptFromCbor(text); return { kind: "wallet" }; } catch { /* not a native script */ }
+      return { kind: "unknown" };
+    }
+    try { return { kind: "cosignerKey", keyHash: await cosignerKeyHash(text) }; } catch (e) {
+      if (/bí mật/.test((e as Error).message)) throw e;
+      return { kind: "unknown" };
+    }
+  }
+
+  /**
+   * Add a sign request received from a cosigner (AI-11): the same checks as inspectRequest (script,
+   * signatures, cosigner membership, origin, validity), then merge its witnesses into the stored copy
+   * of the same transaction, so no separate merge step is needed.
+   */
+  async receiveRequest(text: string): Promise<{ walletId: string; request: string; preview: TxPreview; merged: boolean }> {
+    const info = await this.inspectRequest(text);
+    const r = this.decodeRequest(text);
+    const stored = (this.state.requests?.[r.walletId] ?? []).find((x) => this.txKey(x.tx) === this.txKey(r.tx));
+    if (stored) {
+      const merged = await this.mergeRequests(this.encodeRequest(stored), this.encodeRequest(r));
+      return { walletId: r.walletId, ...merged, merged: true };
+    }
+    await this.storeRequest(r);
+    return { walletId: r.walletId, request: this.encodeRequest(r), preview: info.preview, merged: false };
   }
 
   /** Standard (partially signed) transaction CBOR, usable with other Cardano wallets. */
