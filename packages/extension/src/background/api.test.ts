@@ -156,7 +156,11 @@ describe("WalletApi – multisig", () => {
     const B = await mk2("legal winner thank year wave sausage worth useful legal winner thank yellow");
     const kb = ((await B.handle({ type: "sharedKey", y: 0 })) as any).keyHash;
     expect(kb).toMatch(/^[0-9a-f]{56}$/);
-    const w: any = await A.handle({ type: "sharedCreate", name: "Quỹ", required: 2, cosigners: [{ name: "B", keyHash: kb }] });
+    expect(await A.handle({ type: "sharedCheckKey", input: kb.toUpperCase() })).toBe(kb);
+    await expect(A.handle({ type: "sharedCheckKey", input: "ab".repeat(64) })).rejects.toThrow(/bí mật/);
+    const preview: any = await A.handle({ type: "sharedPreview", required: 2, cosigners: [{ name: "B", keyHash: kb }] });
+    const w: any = await A.handle({ type: "sharedCreate", name: "Quỹ", required: 2, cosigners: [{ name: "B", keyHash: kb }], myIndex: preview.myIndex });
+    expect(w.address).toBe(preview.address);
     expect(((await A.handle({ type: "sharedList" })) as any[]).length).toBe(1);
     const exported = (await A.handle({ type: "sharedExport", id: w.id })) as string;
     const wb: any = await B.handle({ type: "sharedImport", input: exported });
@@ -167,6 +171,10 @@ describe("WalletApi – multisig", () => {
     const items: any[] = (await A.handle({ type: "sharedRequests", id: w.id })) as any[];
     expect(items[0].preview.signedBy.length).toBe(1);
     expect(items[0].memo).toBe("thử");
+    expect(await B.handle({ type: "sharedDetect", input: req })).toEqual({ kind: "signRequest", walletId: w.id });
+    expect(await B.handle({ type: "sharedDetect", input: kb })).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect(((await B.handle({ type: "sharedReceive", request: req })) as any).merged).toBe(false);
+    expect(await B.handle({ type: "sharedPendingCount" })).toBe(1);
     const signed: any = await B.handle({ type: "sharedSign", request: req, password: PW });
     expect(signed.preview.enough).toBe(true);
     expect(await B.handle({ type: "sharedSubmit", request: signed.request })).toHaveLength(64);

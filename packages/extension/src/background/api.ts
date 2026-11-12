@@ -1,4 +1,4 @@
-import { summarizeTx, serializeBalance, serializeSendPreview, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeBalance, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -54,6 +54,8 @@ export type Req =
   | { type: "sharedDiscover" }
   | { type: "sharedCreate"; name: string; required: number; cosigners: { name: string; keyHash: string }[]; myIndex?: number; myName?: string }
   | { type: "sharedImport"; input: string; name?: string }
+  | { type: "sharedPreview"; required: number; cosigners: { name: string; keyHash: string }[]; myIndex?: number }
+  | { type: "sharedCheckKey"; input: string }
   | { type: "sharedExport"; id: string }
   | { type: "sharedRemove"; id: string }
   | { type: "sharedBalance"; id: string }
@@ -67,6 +69,9 @@ export type Req =
   | { type: "sharedMerge"; a: string; b: string }
   | { type: "sharedSubmit"; request: string }
   | { type: "sharedDismiss"; id: string; request: string }
+  | { type: "sharedDetect"; input: string }
+  | { type: "sharedPendingCount" }
+  | { type: "sharedReceive"; request: string }
   | { type: "pendingApprovals" }
   | { type: "resolveApproval"; id: string; ok: boolean };
 
@@ -130,6 +135,8 @@ export class WalletApi {
         return this.touch(req.password);
       case "unlock":
         await m.unlock(req.password);
+        // Find multisig wallets registered on-chain for my keys in the background (AI-14); offline is fine.
+        void m.discoverShared().catch(() => undefined);
         return this.touch(req.password);
       case "lock":
         m.lock();
@@ -178,6 +185,7 @@ export class WalletApi {
       case "exportMnemonic":
         return m.exportMnemonic(req.id, req.password);
       case "sharedList":
+        await m.adoptLocalShared(); // multisig wallets another wallet on this device already holds
         return m.listShared();
       case "sharedKey":
         return m.sharedKeyInfo(req.y);
@@ -187,6 +195,10 @@ export class WalletApi {
         return m.discoverShared();
       case "sharedCreate":
         return m.createShared(req);
+      case "sharedPreview":
+        return m.previewShared({ required: req.required, cosigners: req.cosigners, myIndex: req.myIndex });
+      case "sharedCheckKey":
+        return cosignerKeyHash(req.input);
       case "sharedImport":
         return m.importShared(req.input, req.name);
       case "sharedExport":
@@ -214,6 +226,13 @@ export class WalletApi {
         return m.mergeRequests(req.a, req.b);
       case "sharedSubmit":
         return m.submitRequest(req.request);
+      case "sharedPendingCount":
+        await m.adoptLocalShared();
+        return m.pendingActionCount();
+      case "sharedDetect":
+        return m.detectSharedInput(req.input);
+      case "sharedReceive":
+        return m.receiveRequest(req.request);
       case "sharedDismiss":
         return m.dismissRequest(req.id, req.request);
       case "pendingApprovals":

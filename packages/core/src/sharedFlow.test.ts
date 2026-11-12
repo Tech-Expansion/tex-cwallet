@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Serialization, resolveTxHash } from "@meshsdk/core-cst";
 import { DEFAULT_PROTOCOL_PARAMETERS } from "@meshsdk/common";
-import { WalletManager, MemoryStore, parseRegistration, signWithSharedKey, attachWitnesses, SHARED_TTL_SLOTS, type ProviderFactory, type Registration } from "./index";
+import { WalletManager, MemoryStore, parseRegistration, signWithSharedKey, attachWitnesses, sharedPublicKey, scriptCborOf, SHARED_TTL_SLOTS, type ProviderFactory, type Registration } from "./index";
 
 const M = [
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
@@ -339,6 +339,191 @@ describe("AI-8: đề xuất → co-sign → submit khi đủ chữ ký", () => 
     expect(await B.submitRequest(B.requestCbor(signed.request))).toHaveLength(64);
     const stranger = await user(2);
     await expect(stranger.inspectRequest(cbor)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("AI-11: paste anything, merge signatures automatically", () => {
+  async function setup2of3() {
+    const w = await createWallet();
+    await B.importShared(A.exportShared(w.id));
+    await C.importShared(A.exportShared(w.id));
+    return w;
+  }
+
+  it("detectSharedInput recognizes keys, wallet data and sign requests", async () => {
+    const w = await setup2of3();
+    const kb = (await B.sharedKeyInfo(0)).keyHash;
+    expect(await A.detectSharedInput(kb)).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect(await A.detectSharedInput(`  ${kb.toUpperCase()}\n`)).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect(await A.detectSharedInput(sharedPublicKey(M[1]!.split(" "), 0))).toEqual({ kind: "cosignerKey", keyHash: kb });
+    expect((await A.detectSharedInput(DEST)).kind).toBe("cosignerKey"); // address with a payment key
+    expect(await A.detectSharedInput(A.exportShared(w.id))).toEqual({ kind: "wallet" });
+    expect(await A.detectSharedInput(scriptCborOf(w.paymentScript))).toEqual({ kind: "wallet" });
+    const req = await A.proposeShared(w.id, DEST, 3_000_000n);
+    expect(await B.detectSharedInput(req)).toEqual({ kind: "signRequest", walletId: w.id });
+    expect(await B.detectSharedInput(A.requestCbor(req))).toEqual({ kind: "signRequest", walletId: w.id });
+    for (const junk of ["", "hello", "{}", "{not json", "abcd", w.address]) expect((await A.detectSharedInput(junk)).kind).toBe("unknown");
+    await expect(A.detectSharedInput("ab".repeat(64))).rejects.toThrow(/bí mật/);
+    await expect(A.detectSharedInput("addr_xsk1qqqq")).rejects.toThrow(/bí mật/);
+  });
+
+  it("receiveRequest stores a new request, then merges a copy with more signatures", async () => {
+    const w = await setup2of3();
+    const base = await A.proposeShared(w.id, DEST, 3_000_000n); // A signed (1/2)
+    const first = await B.receiveRequest(base);
+    expect(first).toMatchObject({ walletId: w.id, merged: false });
+    expect(first.preview.signedBy).toHaveLength(1);
+    expect(await B.listRequests(w.id)).toHaveLength(1);
+    const fromC = (await C.signRequest(base, PW)).request; // C signs its own copy (2/2)
+    const second = await B.receiveRequest(fromC);
+    expect(second.merged).toBe(true);
+    expect(new Set(second.preview.signedBy).size).toBe(2);
+    expect(second.preview.enough).toBe(true);
+    expect(await B.listRequests(w.id)).toHaveLength(1); // still one request, now complete
+    expect(await B.submitRequest(second.request)).toHaveLength(64);
+  });
+
+  it("receiveRequest keeps every safety check", async () => {
+    const w = await setup2of3();
+    const req = JSON.parse(await A.proposeShared(w.id, DEST, 3_000_000n));
+    const outsider = "letter advice cage absurd amount doctor acoustic avoid letter advice cage above".split(" ");
+    await expect(B.receiveRequest(JSON.stringify({ ...req, tx: attachWitnesses(req.tx, [await signWithSharedKey(outsider, 9, req.tx)]) }))).rejects.toMatchObject({ code: "NOT_SIGNER" });
+    const t = Serialization.Transaction.fromCbor(req.tx as never);
+    const body = t.body();
+    body.setFee(body.fee() + 1n);
+    t.setBody(body);
+    await expect(B.receiveRequest(JSON.stringify({ ...req, tx: t.toCbor() }))).rejects.toMatchObject({ code: "INVALID_SIGNATURE" });
+    tipSlot = 1_000 + SHARED_TTL_SLOTS;
+    await expect(B.receiveRequest(JSON.stringify(req))).rejects.toMatchObject({ code: "EXPIRED" });
+    expect(await B.listRequests(w.id)).toHaveLength(0);
+  });
+});
+
+describe("AI-13: preview the multisig address before creating it", () => {
+  it("previewShared matches createShared and saves nothing", async () => {
+    const kb = (await B.sharedKeyInfo(0)).keyHash, kc = (await C.sharedKeyInfo(0)).keyHash;
+    const cosigners = [{ name: "Bình", keyHash: kb }, { name: "Chi", keyHash: kc }];
+    const p = await A.previewShared({ required: 2, cosigners });
+    expect(p).toMatchObject({ required: 2, total: 3, myIndex: 0 });
+    expect(p.address).toMatch(/^addr_test1w/);
+    expect(A.listShared()).toHaveLength(0); // nothing saved
+    // key order does not change the address
+    expect((await A.previewShared({ required: 2, cosigners: [...cosigners].reverse() })).address).toBe(p.address);
+    // a CIP-1854 public key gives the same address as its key hash
+    expect((await A.previewShared({ required: 2, cosigners: [{ name: "Bình", keyHash: sharedPublicKey(M[1]!.split(" "), 0) }, cosigners[1]!] })).address).toBe(p.address);
+    const w = await A.createShared({ name: "Quỹ", required: 2, cosigners, myIndex: p.myIndex });
+    expect(w.address).toBe(p.address);
+    expect(w.myIndex).toBe(p.myIndex);
+    // the next preview uses my next unused key, so it is a different wallet; the same index gives the same one
+    const next = await A.previewShared({ required: 2, cosigners });
+    expect(next.myIndex).toBe(1);
+    expect(next.address).not.toBe(p.address);
+    expect((await A.previewShared({ required: 2, cosigners, myIndex: p.myIndex })).address).toBe(p.address);
+    await expect(A.createShared({ name: "Lại", required: 2, cosigners, myIndex: p.myIndex })).rejects.toThrow(/đã tồn tại/);
+  });
+
+  it("previewShared rejects bad settings like createShared", async () => {
+    const kb = (await B.sharedKeyInfo(0)).keyHash;
+    await expect(A.previewShared({ required: 3, cosigners: [{ name: "B", keyHash: kb }] })).rejects.toThrow();
+    await expect(A.previewShared({ required: 1, cosigners: [{ name: "B", keyHash: "xyz" }] })).rejects.toThrow();
+    await expect(A.previewShared({ required: 1, cosigners: [{ name: "B", keyHash: (await A.sharedKeyInfo(0)).keyHash }] })).rejects.toThrow(/tự động/);
+  });
+});
+
+describe("AI-14: request inbox", () => {
+  it("pendingActionCount counts requests I can sign and ones ready to submit", async () => {
+    const w = await createWallet();
+    await B.importShared(A.exportShared(w.id));
+    await C.importShared(A.exportShared(w.id));
+    expect(await A.pendingActionCount()).toBe(0);
+    const req = await A.proposeShared(w.id, DEST, 3_000_000n); // A signed, 1/2
+    expect(await A.pendingActionCount()).toBe(0); // nothing left for A to do
+    await B.receiveRequest(req);
+    expect(await B.pendingActionCount()).toBe(1); // B can sign
+    const signed = await B.signRequest(req, PW); // 2/2
+    expect(signed.preview.enough).toBe(true);
+    expect(await B.pendingActionCount()).toBe(1); // ready to submit
+    await B.submitRequest(signed.request);
+    expect(await B.pendingActionCount()).toBe(0);
+  });
+
+  it("listRequests reports the slots left before expiry", async () => {
+    const w = await createWallet();
+    await A.proposeShared(w.id, DEST, 3_000_000n);
+    expect((await A.listRequests(w.id))[0]!.slotsLeft).toBe(SHARED_TTL_SLOTS);
+    tipSlot += 3_600;
+    expect((await A.listRequests(w.id))[0]!.slotsLeft).toBe(SHARED_TTL_SLOTS - 3_600);
+    tipSlot = 1_000 + SHARED_TTL_SLOTS + 10;
+    const late = (await A.listRequests(w.id))[0]!;
+    expect(late).toMatchObject({ slotsLeft: 0, expired: true });
+  });
+});
+
+describe("AI-15: several wallets on one device", () => {
+  it("each wallet signs with its own key; sign requests are shared on the device", async () => {
+    const m = new WalletManager(new MemoryStore(), providers);
+    await m.setupPassword(PW);
+    const v1 = await m.addWallet("V1", M[0]!), v2 = await m.addWallet("V2", M[1]!), v3 = await m.addWallet("V3", M[2]!);
+    await m.setActive(v2.id);
+    const k2 = (await m.sharedKeyInfo(0)).keyHash;
+    await m.setActive(v3.id);
+    const k3 = (await m.sharedKeyInfo(0)).keyHash;
+
+    // wallet 1 creates a 2-of-3 and proposes (signed by wallet 1)
+    await m.setActive(v1.id);
+    const ms = await m.createShared({ name: "Quỹ", required: 2, cosigners: [{ name: "V2", keyHash: k2 }, { name: "V3", keyHash: k3 }] });
+    await m.proposeShared(ms.id, DEST, 3_000_000n);
+    expect((await m.listRequests(ms.id))[0]!.iSigned).toBe(true);
+    const exported = m.exportShared(ms.id);
+
+    // wallet 2 picks up the multisig wallet held by wallet 1 on this device (it holds one of wallet 2's keys)
+    await m.setActive(v2.id);
+    const adopted = await m.adoptLocalShared();
+    expect(adopted.map((w) => w.id)).toEqual([ms.id]);
+    expect(adopted[0]!.myIndex).toBe(0);
+    expect(m.listShared()).toHaveLength(1);
+    expect(await m.adoptLocalShared()).toHaveLength(0); // only once
+    expect((await m.importShared(exported)).id).toBe(ms.id); // importing again just updates it
+    expect(await m.pendingActionCount()).toBe(1);
+    const list = await m.listRequests(ms.id);
+    expect(list).toHaveLength(1); // the request created by wallet 1 is visible
+    expect(list[0]!.iSigned).toBe(false); // the bug: it said "already signed"
+    const signed = await m.signRequest(list[0]!.request, PW);
+    expect(signed.preview.signedBy).toContain(k2); // signed with wallet 2's key, not wallet 1's
+    expect(new Set(signed.preview.signedBy).size).toBe(2);
+    expect(await m.submitRequest(signed.request)).toHaveLength(64);
+
+    // a wallet whose keys are not in the script does not get it
+    const m2 = new WalletManager(new MemoryStore(), providers);
+    await m2.setupPassword(PW);
+    await m2.addWallet("A", M[0]!);
+    const other = await m2.addWallet("X", m2.newMnemonic());
+    await m2.createShared({ name: "Riêng", required: 1, cosigners: [{ name: "V2", keyHash: k2 }] });
+    await m2.setActive(other.id);
+    expect(await m2.adoptLocalShared()).toHaveLength(0);
+
+    // removing wallet 2's copy leaves wallet 1's; removing wallet 1 drops its entries
+    await m.removeShared(ms.id);
+    expect(m.listShared()).toHaveLength(0);
+    expect(await m.adoptLocalShared()).toHaveLength(0); // removed on purpose: not adopted again
+    expect((await m.importShared(exported)).id).toBe(ms.id); // an explicit import brings it back
+    expect(m.listShared()).toHaveLength(1);
+    await m.removeShared(ms.id);
+    await m.setActive(v1.id);
+    expect(m.listShared()).toHaveLength(1);
+    await m.removeWallet(v1.id);
+    await m.setActive(v3.id);
+    expect(m.listShared()).toHaveLength(0);
+  });
+
+  it("accounts of the same mnemonic share one multisig key (CIP-0146 uses account 0)", async () => {
+    const m = new WalletManager(new MemoryStore(), providers);
+    await m.setupPassword(PW);
+    const v1 = await m.addWallet("V1", M[0]!);
+    const k = (await m.sharedKeyInfo(0)).keyHash;
+    await m.addAccount(v1.id);
+    await m.setActive(v1.id, 1);
+    expect((await m.sharedKeyInfo(0)).keyHash).toBe(k);
   });
 });
 

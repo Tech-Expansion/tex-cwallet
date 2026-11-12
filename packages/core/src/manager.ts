@@ -33,11 +33,20 @@ interface State {
   activeAccount: number;
   network: NetworkName;
   shared?: SharedEntry[];
+  /** Multisig wallet ids a wallet removed on purpose: not adopted again from other local wallets */
+  sharedHidden?: Record<string, string[]>;
   requests?: Record<string, SignRequest[]>;
   providerSettings?: ProviderSettings;
   /** Xác minh mật khẩu */
   check?: EncryptedBlob;
 }
+
+/** What a pasted text is (AI-11). */
+export type SharedInput =
+  | { kind: "signRequest"; walletId: string }
+  | { kind: "wallet" }
+  | { kind: "cosignerKey"; keyHash: string }
+  | { kind: "unknown" };
 
 /** Ví multisig kèm thông tin: ví nào của mình ký và dùng chỉ số khóa y nào. */
 export interface SharedEntry extends SharedWallet { ownerWalletId: string }
@@ -194,6 +203,10 @@ export class WalletManager {
     this.getMeta(id);
     this.state.wallets = this.state.wallets.filter((w) => w.id !== id);
     this.session.delete(id);
+    // Its multisig wallets go with it; requests stay while another wallet still holds the multisig wallet
+    this.state.shared = this.sharedList().filter((x) => x.ownerWalletId !== id);
+    if (this.state.sharedHidden) delete this.state.sharedHidden[id];
+    for (const rid of Object.keys(this.state.requests ?? {})) if (!this.state.shared.some((x) => x.id === rid)) delete this.state.requests![rid];
     if (this.state.activeWalletId === id) {
       this.state.activeWalletId = this.state.wallets[0]?.id;
       this.state.activeAccount = 0;
@@ -356,11 +369,45 @@ export class WalletManager {
   private sharedList(): SharedEntry[] {
     return (this.state.shared ??= []);
   }
-  listShared(): SharedEntry[] {
-    return this.sharedList().filter((w) => w.network === this.state.network);
+  /** Id of the active wallet when it can hold multisig keys (has a mnemonic), else undefined. */
+  private multisigOwner(): string | undefined {
+    const w = this.state.wallets.find((x) => x.id === this.state.activeWalletId);
+    return w?.kind === "mnemonic" ? w.id : undefined;
   }
+  /**
+   * Multisig wallets of the active wallet on the current network. Each wallet on this device has its own
+   * list (the same multisig wallet can be added by several of them), so signing status and signing always
+   * use the active wallet's CIP-1854 key. Sign requests are stored per multisig wallet and shared.
+   */
+  listShared(): SharedEntry[] {
+    const owner = this.multisigOwner();
+    return this.sharedList().filter((w) => w.network === this.state.network && w.ownerWalletId === owner);
+  }
+  /**
+   * Add to the active wallet the multisig wallets that other wallets on this device hold and that
+   * include one of the active wallet's CIP-1854 keys (AI-15). Local only, no network. Sign requests are
+   * already shared per multisig wallet, so pending requests show up at once.
+   */
+  async adoptLocalShared(): Promise<SharedEntry[]> {
+    const owner = this.multisigOwner();
+    if (!owner || !this.unlocked || !this.session.has(owner)) return [];
+    const have = new Set(this.listShared().map((w) => w.id));
+    const added: SharedEntry[] = [];
+    for (const w of [...this.sharedList()]) {
+      if (w.network !== this.state.network || w.ownerWalletId === owner || have.has(w.id)) continue;
+      if (this.state.sharedHidden?.[owner]?.includes(w.id)) continue;
+      const y = await this.myIndexIn(this.words(owner), w.paymentScript);
+      if (y === undefined) continue;
+      const entry: SharedEntry = { ...w, ownerWalletId: owner, myIndex: y };
+      await this.persistShared(entry);
+      have.add(w.id);
+      added.push(entry);
+    }
+    return added;
+  }
+
   private sharedById(id: string): SharedEntry {
-    const w = this.sharedList().find((x) => x.id === id);
+    const w = this.listShared().find((x) => x.id === id);
     if (!w) throw new WalletError("NOT_FOUND", "Không tìm thấy ví multisig");
     return w;
   }
@@ -392,7 +439,9 @@ export class WalletManager {
 
   private async persistShared(entry: SharedEntry) {
     const list = this.sharedList();
-    const i = list.findIndex((x) => x.id === entry.id);
+    const i = list.findIndex((x) => x.id === entry.id && x.ownerWalletId === entry.ownerWalletId);
+    const hidden = this.state.sharedHidden?.[entry.ownerWalletId];
+    if (hidden?.includes(entry.id)) this.state.sharedHidden![entry.ownerWalletId] = hidden.filter((x) => x !== entry.id);
     if (i >= 0) list[i] = { ...list[i]!, ...entry, signers: entry.signers.map((s) => ({ ...s, name: list[i]!.signers.find((o) => o.keyHash === s.keyHash && !/^Cosigner \d+$/.test(o.name))?.name ?? s.name })) };
     else list.push(entry);
     await this.save();
@@ -406,8 +455,29 @@ export class WalletManager {
   }
 
   /** Khám phá ví multisig đã đăng ký on-chain (CIP-0146) có chứa khóa của ví đang dùng. */
+  /**
+   * Requests that need me, across this network's multisig wallets (AI-14): ones I can still sign, and
+   * ones with enough signatures to submit. Local only (no network), so it is cheap enough for a badge;
+   * expiry and stale UTxOs are checked when the wallet's request list is opened.
+   */
+  async pendingActionCount(): Promise<number> {
+    let n = 0;
+    for (const w of this.listShared()) {
+      if (w.myIndex === undefined) continue;
+      const mine = await this.myKeyHashes(w);
+      for (const r of this.state.requests?.[w.id] ?? []) {
+        try {
+          const p = await inspectSharedTx(w, r.tx);
+          if (p.enough || !p.signedBy.some((k) => mine.includes(k))) n++;
+        } catch { /* a request that no longer verifies is not counted */ }
+      }
+    }
+    return n;
+  }
+
   async discoverShared(): Promise<SharedEntry[]> {
     this.requireUnlocked();
+    await this.adoptLocalShared();
     const owner = this.activeMnemonicId();
     const words = this.words(owner);
     const creds = await Promise.all(Array.from({ length: DISCOVER_GAP }, (_, y) => sharedKeyHash(words, y)));
@@ -427,7 +497,8 @@ export class WalletManager {
    * Tạo ví multisig mới. `cosigners` là khóa của những người khác (key hash hoặc địa chỉ). Khóa của mình
    * (chỉ số `myIndex`) được thêm tự động. Script giống nhau ở mọi cosigner nên cần chia sẻ qua đăng ký on-chain hoặc file.
    */
-  async createShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }): Promise<SharedEntry> {
+  /** Build the multisig wallet for these settings without saving it (shared by previewShared and createShared). */
+  private async buildShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }) {
     this.requireUnlocked();
     const owner = this.activeMnemonicId();
     const y = p.myIndex ?? (await this.sharedNextIndex()).y;
@@ -437,7 +508,22 @@ export class WalletManager {
     const signers = [{ name: p.myName || "Tôi", keyHash: mine }, ...others];
     const script = buildPaymentScript(p.required, signers.map((s) => s.keyHash));
     const w = makeSharedWallet({ name: p.name.trim() || "Ví multisig", network: this.state.network, paymentScript: script, signers, myIndex: y });
-    if (this.sharedList().some((x) => x.id === w.id)) throw new SharedError("INVALID_CONFIG", "Ví này đã tồn tại");
+    return { w, owner };
+  }
+
+  /**
+   * Address and script hash the wallet would get, before creating it (AI-13). Nothing is saved.
+   * Returns the key index used for my key; pass it back to createShared so the created wallet is
+   * exactly the previewed one even if the next unused index changes in between.
+   */
+  async previewShared(p: { required: number; cosigners: Signer[]; myIndex?: number }): Promise<{ address: string; paymentScriptHash: string; required: number; total: number; myIndex: number }> {
+    const { w } = await this.buildShared({ name: "", ...p });
+    return { address: w.address, paymentScriptHash: w.paymentScriptHash, required: w.required, total: w.signers.length, myIndex: w.myIndex! };
+  }
+
+  async createShared(p: { name: string; required: number; cosigners: Signer[]; myIndex?: number; myName?: string }): Promise<SharedEntry> {
+    const { w, owner } = await this.buildShared(p);
+    if (this.listShared().some((x) => x.id === w.id)) throw new SharedError("INVALID_CONFIG", "Ví này đã tồn tại");
     const entry = { ...w, ownerWalletId: owner };
     await this.persistShared(entry);
     return entry;
@@ -487,9 +573,13 @@ export class WalletManager {
   }
 
   async removeShared(id: string) {
-    this.sharedById(id);
-    this.state.shared = this.sharedList().filter((x) => x.id !== id);
-    delete (this.state.requests ??= {})[id];
+    const w = this.sharedById(id);
+    this.state.shared = this.sharedList().filter((x) => !(x.id === id && x.ownerWalletId === w.ownerWalletId));
+    // Removed on purpose: do not adopt it again from another wallet on this device (importing it again does)
+    const hidden = ((this.state.sharedHidden ??= {})[w.ownerWalletId] ??= []);
+    if (!hidden.includes(id)) hidden.push(id);
+    // Sign requests are shared by every wallet on this device that holds the multisig wallet
+    if (!this.sharedList().some((x) => x.id === id)) delete (this.state.requests ??= {})[id];
     await this.save();
   }
 
@@ -523,6 +613,53 @@ export class WalletManager {
     if (p.ttl === undefined) throw new SharedError("INVALID_TX", "Giao dịch không có thời hạn hiệu lực; hãy đề xuất lại");
     const tip = await this.p().chain.getTip();
     if (tip.slot >= p.ttl) throw new SharedError("EXPIRED", `Giao dịch đã hết hạn (slot ${p.ttl}, hiện tại ${tip.slot}); hãy đề xuất lại`);
+  }
+
+  /**
+   * Classify pasted text without changing state (AI-11): a sign request (wallet JSON envelope or raw
+   * transaction CBOR carrying the script of a known wallet), wallet data (exported JSON, registration
+   * transaction or native script CBOR) or a cosigner key (key hash, CIP-1854 public key or address).
+   * A pasted private key throws instead of being classified.
+   */
+  async detectSharedInput(input: string): Promise<SharedInput> {
+    const text = input.trim();
+    if (!text) return { kind: "unknown" };
+    if (text.startsWith("{")) {
+      let j: { kind?: unknown; walletId?: unknown; paymentScript?: unknown };
+      try { j = JSON.parse(text); } catch { return { kind: "unknown" }; }
+      if (j.kind === "cardano-multisig-sign-request" && typeof j.walletId === "string") return { kind: "signRequest", walletId: j.walletId };
+      if (j.paymentScript) return { kind: "wallet" };
+      return { kind: "unknown" };
+    }
+    if (/^[0-9a-f]+$/i.test(text)) {
+      if (/^([0-9a-f]{56}|[0-9a-f]{64})$/i.test(text)) return { kind: "cosignerKey", keyHash: await cosignerKeyHash(text) };
+      if (/^[0-9a-f]{128}$/i.test(text)) await cosignerKeyHash(text); // throws: looks like a private key
+      if (parseRegistration(text)) return { kind: "wallet" };
+      try { return { kind: "signRequest", walletId: this.decodeRequest(text).walletId }; } catch { /* not a transaction of a known wallet */ }
+      try { scriptFromCbor(text); return { kind: "wallet" }; } catch { /* not a native script */ }
+      return { kind: "unknown" };
+    }
+    try { return { kind: "cosignerKey", keyHash: await cosignerKeyHash(text) }; } catch (e) {
+      if (/bí mật/.test((e as Error).message)) throw e;
+      return { kind: "unknown" };
+    }
+  }
+
+  /**
+   * Add a sign request received from a cosigner (AI-11): the same checks as inspectRequest (script,
+   * signatures, cosigner membership, origin, validity), then merge its witnesses into the stored copy
+   * of the same transaction, so no separate merge step is needed.
+   */
+  async receiveRequest(text: string): Promise<{ walletId: string; request: string; preview: TxPreview; merged: boolean }> {
+    const info = await this.inspectRequest(text);
+    const r = this.decodeRequest(text);
+    const stored = (this.state.requests?.[r.walletId] ?? []).find((x) => this.txKey(x.tx) === this.txKey(r.tx));
+    if (stored) {
+      const merged = await this.mergeRequests(this.encodeRequest(stored), this.encodeRequest(r));
+      return { walletId: r.walletId, ...merged, merged: true };
+    }
+    await this.storeRequest(r);
+    return { walletId: r.walletId, request: this.encodeRequest(r), preview: info.preview, merged: false };
   }
 
   /** Standard (partially signed) transaction CBOR, usable with other Cardano wallets. */
@@ -571,7 +708,7 @@ export class WalletManager {
    * Các yêu cầu ký đang theo dõi (kèm trạng thái chữ ký). Tự dọn: yêu cầu đã được gửi lên chuỗi thì bỏ đi;
    * yêu cầu có UTxO đã bị tiêu bởi giao dịch khác thì đánh dấu `stale` (không thể ký/gửi nữa).
    */
-  async listRequests(id: string): Promise<{ request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean }[]> {
+  async listRequests(id: string): Promise<{ request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean; slotsLeft?: number }[]> {
     const w = this.sharedById(id);
     const mine = await this.myKeyHashes(w);
     const stored = (this.state.requests?.[id] ?? []).slice().sort((a, b) => b.createdAt - a.createdAt);
@@ -592,7 +729,8 @@ export class WalletManager {
         continue;
       }
       const expired = preview.ttl === undefined || (slot !== undefined && slot >= preview.ttl);
-      out.push({ request: this.encodeRequest(r), memo: r.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale, expired });
+      const slotsLeft = preview.ttl !== undefined && slot !== undefined ? Math.max(0, preview.ttl - slot) : undefined;
+      out.push({ request: this.encodeRequest(r), memo: r.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale, expired, slotsLeft });
     }
     if (changed) await this.save();
     return out;

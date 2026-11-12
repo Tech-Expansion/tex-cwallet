@@ -163,25 +163,31 @@ refuses to build the transaction.
 
 ### Multisig (m-of-n)
 
-Open the **Multisig** tab. Each person uses their own wallet; nobody shares private keys.
+Open the **Multisig** tab. Each person uses their own wallet; nobody shares private keys. Anything a cosigner
+sends you (a key, wallet data, a sign request as JSON or raw transaction CBOR, or a downloaded file) goes into
+the one **Dán hoặc kéo-thả** box: the wallet recognizes it and opens the right screen. Pasting a private key is
+rejected.
 
-1. **Share your key.** The tab shows *Khóa multisig của bạn (CIP-1854)*, a key hash derived from your mnemonic
-   at `m/1854'/1815'/0'/0/y`. Send it to whoever creates the wallet. A cosigner key can be given as a key hash,
-   a CIP-1854 public key (64 hex) or an address; pasting a private key is rejected.
-2. **Create** (**Tạo ví**): name, required signatures (m) and the other cosigners. Your key is added
-   automatically. The same keys and m always give the same script and address, whatever the order. m must be
-   between 1 and the number of keys.
-3. **Let the others add it**, either way:
-   - **Đăng ký on-chain** (costs a small fee from your normal wallet), then the others press **Khám phá**; or
-   - **Sao chép dữ liệu ví** and the others paste it into **Nhập ví** (native script CBOR, a registration
-     transaction, or the exported JSON also work).
+1. **Share your key.** **Chia sẻ key** shows *Khóa multisig của bạn (CIP-1854)* as a QR code, with copy and
+   download. It is a key hash derived from your mnemonic at `m/1854'/1815'/0'/0/y`. A cosigner key can also be
+   given as a CIP-1854 public key (64 hex) or an address.
+2. **Create** (**Tạo ví**): name, then one row per cosigner (name + key, checked as you type; you can paste
+   several "name key" lines at once), then the required signatures on a slider. Your key is added
+   automatically. The address of the new wallet is shown before anything is saved, with a copy button; the
+   same keys and m always give the same address, whatever the order.
+3. **Let the others add it.** Right after creating, the wallet offers **Đăng ký on-chain** (a small fee from your
+   normal wallet): the others' wallets then find it on their own after unlocking. Or use **Chia sẻ ví** and
+   they drop the file or paste the data into their box.
 4. **Fund** the multisig address (`addr_test1w…`) from any wallet or the faucet.
 5. **Propose** (**Đề xuất chi tiền**): address, amount, optional memo. The proposal is signed by you and expires
    after 24 hours (it carries `invalid_hereafter` = current tip + 86400 slots).
-6. **Share the request** (**Sao chép yêu cầu**). Cosigners paste it into *Dán yêu cầu ký nhận từ cosigner* →
-   **Kiểm tra**, see where the money goes, how much and the fee, then **Ký**. A raw transaction CBOR from another
-   Cardano wallet is accepted too.
-7. **Gửi lên mạng** once m signatures are present. Before that, submitting is blocked.
+6. **Share the request** (**Chia sẻ** on the request: QR when short enough, copy, file, or the raw CBOR for other
+   wallets). The cosigner drops or pastes it into their box; it appears in the request list. A copy with more
+   signatures is merged automatically into the stored one.
+7. **Sign and submit.** Each request shows who has signed, who is waiting and the time left. When your
+   signature is the last one needed, "Gửi lên mạng ngay khi đủ chữ ký" submits it right away; otherwise press
+   **Gửi lên mạng** once m signatures are present. The Multisig tab shows a badge with the number of requests
+   that need you.
 
 The wallet rejects a signature from a key that is not in the script, a transaction changed after it was signed,
 and an expired proposal (create a new one). A request whose UTxO was spent by another transaction is marked

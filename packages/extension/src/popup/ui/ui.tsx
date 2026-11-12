@@ -235,6 +235,43 @@ export function SignSheet({ title, children, onSign, onCancel, busy, error }: { 
   );
 }
 
+/** Longest text shown as a QR code; longer data is shared by copy or file only. */
+export const QR_MAX_CHARS = 1000;
+
+/**
+ * Share one piece of data three ways (AI-12): a QR code when it is short enough to scan, a copy button,
+ * and a file download. `extra` adds one more copy action, e.g. raw CBOR for other wallets.
+ */
+export function ShareSheet({ title, value, filename, extra, onClose }: {
+  title: string; value: string; filename: string; extra?: { label: string; value: string }; onClose: () => void;
+}) {
+  const t = useT();
+  const main = useCopy();
+  const second = useCopy();
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([value], { type: filename.endsWith(".json") ? "application/json" : "text/plain" }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50 backdrop-blur-[2px] animate-fade-up" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="max-h-[92%] space-y-3 overflow-y-auto rounded-t-3xl border-t border-night-700 bg-night-950 p-4 shadow-card">
+        <div className="flex items-center gap-2">
+          <h2 className="flex-1 text-[15px] font-semibold text-ink">{title}</h2>
+          <IconButton label={t("common.close")} onClick={onClose}><X size={16} /></IconButton>
+        </div>
+        {value.length <= QR_MAX_CHARS ? <Qr value={value} /> : <p className="text-[11.5px] text-moon-dim">{t("share.qrTooLong")}</p>}
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="primary" onClick={() => main.copy(value)} data-testid="share-copy"><CopyIcon copied={main.copied} size={15} /> {t("common.copy")}</Button>
+          <Button onClick={download} data-testid="share-download">{t("share.download")}</Button>
+        </div>
+        {extra && <Button block onClick={() => second.copy(extra.value)} data-testid="share-extra"><CopyIcon copied={second.copied} size={15} /> {extra.label}</Button>}
+      </div>
+    </div>
+  );
+}
+
 // ---------- Thông báo (Dynamic Island) ----------
 
 type Island = { kind: "busy"; message: string } | { kind: "success"; message: string; href?: string };

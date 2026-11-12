@@ -53,4 +53,5 @@ export interface TxPreview {
   txHash: string; fee: string; ttl?: number; signedBy: string[]; enough: boolean;
   outputs: { address: string; lovelace: string; tokens: number; change: boolean }[];
 }
-export interface RequestItem { request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean }
+export type SharedInput = { kind: "signRequest"; walletId: string } | { kind: "wallet" } | { kind: "cosignerKey"; keyHash: string } | { kind: "unknown" };
+export interface RequestItem { request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean; slotsLeft?: number }
