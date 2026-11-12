@@ -258,11 +258,12 @@ function Detail({ st, id, go }: { st: AppState; id: string; go: (r: string) => v
                       {r.memo && <div className="text-[12.5px] font-medium text-ink">{r.memo}</div>}
                       <PreviewCard p={r.preview} required={w.required} mine={r.iSigned} own={w.address} />
                       {r.stale && <Notice tone="warn">{t("ms2.stale")}</Notice>}
+                      {r.expired && <Notice tone="warn">{t("ms2.expired")}</Notice>}
                       <div className="grid grid-cols-2 gap-2">
                         <Button onClick={() => { void navigator.clipboard?.writeText(r.request); showToast(t("ms2.copied")); }} data-testid="ms-copy-request">{t("ms2.copyReq")}</Button>
                         {r.preview.enough
-                          ? <Button variant="primary" loading={submit.busy} disabled={r.stale} onClick={() => void submit.run(r.request)} data-testid="ms-submit">{t("ms2.submit")}</Button>
-                          : <Button variant="primary" disabled={r.iSigned || !canSign || r.stale} onClick={() => { act.setError(""); setSignFor({ kind: "sign", request: r.request }); }} data-testid="ms-sign">{t("ms2.sign")}</Button>}
+                          ? <Button variant="primary" loading={submit.busy} disabled={r.stale || r.expired} onClick={() => void submit.run(r.request)} data-testid="ms-submit">{t("ms2.submit")}</Button>
+                          : <Button variant="primary" disabled={r.iSigned || !canSign || r.stale || r.expired} onClick={() => { act.setError(""); setSignFor({ kind: "sign", request: r.request }); }} data-testid="ms-sign">{t("ms2.sign")}</Button>}
                       </div>
                       <button className="text-[11px] text-moon-dim hover:text-bad" onClick={() => void rpc({ type: "sharedDismiss", id, request: r.request }).then(reload)}>{t("ms2.dismiss")}</button>
                     </Card>

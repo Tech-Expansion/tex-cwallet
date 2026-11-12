@@ -20,13 +20,17 @@ npm run proxy       # proxy Blockfrost (xem packages/proxy/README.md)
 ## Multisig (kiểu Eternl: CIP-1854 + CIP-0146)
 - Khóa multisig `m/1854'/1815'/0'/role/y` suy ra từ cùng cụm 24 từ (role 0 thanh toán, 2 stake); KHÔNG phải khóa 1852 thường.
 - Ví = native script m-of-n. Tạo ví (nhập key hash cosigner), nhập ví (native script CBOR / giao dịch đăng ký / JSON xuất), khám phá ví đã đăng ký on-chain (nhãn 1854), đăng ký ví on-chain.
-- Yêu cầu ký = giao dịch ký một phần, chia sẻ bằng sao chép/dán. Quy tắc CIP-1854: kiểm tra script đúng ví, chữ ký hợp lệ và thuộc cosigner, giao dịch nhận về phải có chữ ký cosigner khác.
+- Yêu cầu ký = giao dịch ký một phần, chia sẻ bằng sao chép/dán (JSON của ví hoặc CBOR giao dịch chuẩn, dán được CBOR thô từ ví khác). Đề xuất hết hạn sau 24 giờ (`invalid_hereafter` = tip + 86400 slot); quá hạn thì không ký/gửi được, phải đề xuất lại. Quy tắc CIP-1854: kiểm tra script đúng ví, chữ ký hợp lệ và thuộc cosigner, giao dịch nhận về phải có chữ ký cosigner khác.
 - Đã kiểm thử với đăng ký thật trên preprod (Koios). Chưa hỗ trợ: metadata mã hóa (CIP-83), file đăng ký off-chain, ký bằng phần cứng, chuyển native token, staking từ ví multisig.
+
+## Gửi tiền (AI-5, AI-6)
+- `prepareSend` dựng giao dịch chưa ký theo protocol parameters thật và trả bản xem trước (số tiền, token, ADA tối thiểu đi kèm, phí, tổng, tiền thối); `confirmSend(txHash, mật khẩu)` chỉ ký đúng giao dịch đã xem.
+- `verifySendTx` kiểm tra cân bằng từng tài sản, min-UTxO, đúng người nhận trước khi ký.
 - Eternl còn có kênh chia sẻ "sign request" riêng chưa có tài liệu công khai nên chưa tương thích; trao đổi hiện qua sao chép/dán.
 - Mesh Multisig vẫn dùng được qua extension (CIP-30): xem liên kết trong tab Multisig.
 
 ## Chưa làm
-- Gửi native token/NFT, staking, DRep/governance, Ledger/Trezor, multi-sig
+- Staking, DRep/governance, Ledger/Trezor, chuyển token từ ví multisig
 - Tự làm mới định kỳ + cache offline trong extension
 - Kiểm toán bảo mật
 - Triển khai proxy thật + đo `/_stats` để chọn gói Blockfrost

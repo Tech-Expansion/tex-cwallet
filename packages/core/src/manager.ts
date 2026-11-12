@@ -58,6 +58,8 @@ const KEY = "wallet-state-v1";
 const MIN_PW = 8;
 const PENDING_TTL_MS = 10 * 60_000; // a previewed transaction expires after 10 minutes
 const MIN_SEND = 1_000_000n; // multisig: at least 1 ADA
+/** Multisig proposals expire after 24 hours (preprod: 1 slot = 1 second). Expired ones must be proposed again. */
+export const SHARED_TTL_SLOTS = 24 * 3600;
 
 export class WalletManager {
   private state: State = { wallets: [], activeAccount: 0, network: DEFAULT_NETWORK };
@@ -516,10 +518,35 @@ export class WalletManager {
 
   // ---- Yêu cầu ký ----
 
+  /** A multisig transaction must have a validity end that the current preprod tip has not reached. */
+  private async assertNotExpired(p: TxPreview) {
+    if (p.ttl === undefined) throw new SharedError("INVALID_TX", "Giao dịch không có thời hạn hiệu lực; hãy đề xuất lại");
+    const tip = await this.p().chain.getTip();
+    if (tip.slot >= p.ttl) throw new SharedError("EXPIRED", `Giao dịch đã hết hạn (slot ${p.ttl}, hiện tại ${tip.slot}); hãy đề xuất lại`);
+  }
+
+  /** Standard (partially signed) transaction CBOR, usable with other Cardano wallets. */
+  requestCbor(text: string): string {
+    return this.decodeRequest(text).tx;
+  }
+
   private encodeRequest(r: SignRequest) {
     return JSON.stringify(r);
   }
   private decodeRequest(text: string): SignRequest {
+    const raw = text.trim();
+    // Raw transaction CBOR from another wallet (Eternl, Mesh…): find the multisig wallet by the script in the witness set
+    if (/^[0-9a-f]+$/i.test(raw) && raw.length <= 65_536) {
+      let hashes: string[];
+      try {
+        hashes = (Serialization.Transaction.fromCbor(raw as never).witnessSet().nativeScripts()?.values() ?? []).map((s) => s.hash() as string);
+      } catch {
+        throw new SharedError("INVALID_TX", "Không đọc được giao dịch CBOR");
+      }
+      const w = this.listShared().find((x) => hashes.includes(x.paymentScriptHash));
+      if (!w) throw new WalletError("NOT_FOUND", "Giao dịch không thuộc ví multisig nào của bạn");
+      return { v: 1, kind: "cardano-multisig-sign-request", walletId: w.id, network: w.network, tx: raw.toLowerCase(), createdAt: Date.now() };
+    }
     let r: SignRequest;
     try {
       r = JSON.parse(text.trim());
@@ -544,7 +571,7 @@ export class WalletManager {
    * Các yêu cầu ký đang theo dõi (kèm trạng thái chữ ký). Tự dọn: yêu cầu đã được gửi lên chuỗi thì bỏ đi;
    * yêu cầu có UTxO đã bị tiêu bởi giao dịch khác thì đánh dấu `stale` (không thể ký/gửi nữa).
    */
-  async listRequests(id: string): Promise<{ request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean }[]> {
+  async listRequests(id: string): Promise<{ request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean }[]> {
     const w = this.sharedById(id);
     const mine = await this.myKeyHashes(w);
     const stored = (this.state.requests?.[id] ?? []).slice().sort((a, b) => b.createdAt - a.createdAt);
@@ -552,6 +579,7 @@ export class WalletManager {
     try {
       unspent = new Set((await this.p().fetcher.fetchAddressUTxOs(w.address)).map((u) => `${u.input.txHash}#${u.input.outputIndex}`));
     } catch { /* không đọc được UTxO: bỏ qua phát hiện lỗi thời */ }
+    const slot = await this.p().chain.getTip().then((t) => t.slot).catch(() => undefined);
     const out = [];
     let changed = false;
     for (const r of stored) {
@@ -563,7 +591,8 @@ export class WalletManager {
         changed = true;
         continue;
       }
-      out.push({ request: this.encodeRequest(r), memo: r.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale });
+      const expired = preview.ttl === undefined || (slot !== undefined && slot >= preview.ttl);
+      out.push({ request: this.encodeRequest(r), memo: r.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale, expired });
     }
     if (changed) await this.save();
     return out;
@@ -582,7 +611,9 @@ export class WalletManager {
     const { fetcher } = this.p();
     const utxos = await fetcher.fetchAddressUTxOs(w.address);
     const params = await this.p().chain.getProtocolParams().catch(() => undefined);
-    const unsigned = await buildSharedSend(w, utxos, to, lovelace, params);
+    if (!params) throw new WalletError("NO_PARAMS", "Không lấy được protocol parameters của preprod; không thể tính phí");
+    const tip = await this.p().chain.getTip();
+    const unsigned = await buildSharedSend(w, utxos, to, lovelace, params, { invalidHereafter: tip.slot + SHARED_TTL_SLOTS });
     const signed = attachWitnesses(unsigned, [await signWithSharedKey(this.ownerWords(w), w.myIndex, unsigned)]);
     const req: SignRequest = { v: 1, kind: "cardano-multisig-sign-request", walletId: w.id, network: w.network, tx: signed, memo: memo?.slice(0, 200), createdAt: Date.now() };
     await this.storeRequest(req);
@@ -596,6 +627,7 @@ export class WalletManager {
     if (r.network !== this.state.network || w.network !== this.state.network) throw new SharedError("INVALID_TX", `Yêu cầu thuộc mạng ${r.network}, bạn đang ở ${this.state.network}`);
     const mine = await this.myKeyHashes(w);
     const preview = await inspectSharedTx(w, r.tx, { requireOtherSigner: !(await this.hasMySignature(w, r.tx)), myKeyHashes: mine });
+    await this.assertNotExpired(preview);
     return { wallet: w, preview, memo: r.memo, iSigned: preview.signedBy.some((k) => mine.includes(k)) };
   }
   private async hasMySignature(w: SharedEntry, tx: string) {
@@ -642,6 +674,7 @@ export class WalletManager {
     const w = this.sharedById(r.walletId);
     const preview = await inspectSharedTx(w, r.tx);
     if (!preview.enough) throw new SharedError("NOT_ENOUGH", `Mới có ${new Set(preview.signedBy).size}/${w.required} chữ ký`);
+    await this.assertNotExpired(preview);
     const clear = async () => {
       this.state.requests ??= {};
       this.state.requests[w.id] = (this.state.requests[w.id] ?? []).filter((x) => this.txKey(x.tx) !== this.txKey(r.tx));
