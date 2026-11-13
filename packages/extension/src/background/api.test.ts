@@ -190,6 +190,21 @@ describe("WalletApi", () => {
     expect(seen.signData.looksLikeTx).toBe(true);
   });
 
+  it("AI-27: ví chỉ xem bằng acct_xvk; dApp bị từ chối; khoá bí mật bị từ chối", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    const { Bip32PrivateKey, Crypto } = await import("@meshsdk/core-cst");
+    const { mnemonicToEntropy } = await import("bip39");
+    const { toAcctXvk } = await import("@wallet/core");
+    await Crypto.ready();
+    const xsk = Bip32PrivateKey.fromBip39Entropy(Buffer.from(mnemonicToEntropy(M), "hex"), "").derive([0x80000000 + 1852, 0x80000000 + 1815, 0x80000000]);
+    await expect(api.handle({ type: "addWatch", name: "X", address: xsk.hex() })).rejects.toThrow(/bí mật/);
+    const w: any = await api.handle({ type: "addWatch", name: "X", address: toAcctXvk(xsk.toPublic().hex()) });
+    expect(w.address).toBe(((await api.handle({ type: "account" })) as any).baseAddress);
+    await api.handle({ type: "setActive", walletId: w.id, account: 0 });
+    await expect(api.dapp("https://x.io", "enable")).rejects.toThrow(/chỉ xem/);
+  });
+
   it("đổi ví/mạng hoặc khóa sẽ ngắt kết nối dApp", async () => {
     await api.handle({ type: "setup", password: PW });
     const w: any = await api.handle({ type: "addWallet", name: "A", mnemonic: M });

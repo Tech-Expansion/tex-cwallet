@@ -145,6 +145,11 @@ export class KoiosClient {
     return out;
   }
 
+  async accountAddresses(stakeAddress: string): Promise<string[]> {
+    const rows = await this.post<{ addresses?: string[] }[]>("/account_addresses", { _stake_addresses: [stakeAddress], _empty: true });
+    return rows.flatMap((r) => r.addresses ?? []);
+  }
+
   async assetAddresses(unit: string): Promise<string[]> {
     const q = `_asset_policy=${unit.slice(0, 56)}&_asset_name=${unit.slice(56)}`;
     const r = await this.f(`${this.url}/asset_addresses?${q}`, { headers: { accept: "application/json" } });
@@ -154,9 +159,9 @@ export class KoiosClient {
   }
 
   /** Newest first. Koios accepts PostgREST paging/order on POST endpoints. */
-  async listAddressTxs(address: string, page: number, count: number): Promise<TxRef[]> {
+  async listAddressTxs(address: string | string[], page: number, count: number): Promise<TxRef[]> {
     const q = `order=block_height.desc,tx_hash.asc&limit=${count}&offset=${(page - 1) * count}`;
-    const rows = await this.post<{ tx_hash: string; block_time: number; block_height: number }[]>(`/address_txs?${q}`, { _addresses: [address] });
+    const rows = await this.post<{ tx_hash: string; block_time: number; block_height: number }[]>(`/address_txs?${q}`, { _addresses: Array.isArray(address) ? address : [address] });
     return rows.map((r) => ({ hash: r.tx_hash, blockTime: Number(r.block_time), blockHeight: Number(r.block_height) }));
   }
 

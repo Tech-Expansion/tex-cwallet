@@ -68,9 +68,33 @@ export class BlockfrostClient {
   }
 
   /** Newest first. */
-  async listAddressTxs(address: string, page: number, count: number): Promise<TxRef[]> {
-    const rows = (await this.get<{ tx_hash: string; block_time: number; block_height: number }[]>(`/addresses/${address}/transactions?order=desc&count=${count}&page=${page}`)) ?? [];
-    return rows.map((r) => ({ hash: r.tx_hash, blockTime: r.block_time, blockHeight: r.block_height }));
+  async listAddressTxs(address: string | string[], page: number, count: number): Promise<TxRef[]> {
+    const one = async (a: string, p: number, c: number) =>
+      ((await this.get<{ tx_hash: string; block_time: number; block_height: number }[]>(`/addresses/${a}/transactions?order=desc&count=${c}&page=${p}`)) ?? [])
+        .map((r) => ({ hash: r.tx_hash, blockTime: r.block_time, blockHeight: r.block_height }));
+    const list = Array.isArray(address) ? address : [address];
+    if (list.length === 1) return one(list[0]!, page, count);
+    // Several addresses (watch-only xpub): newest page*count of each, merged; Blockfrost has no multi-address list.
+    const need = page * count;
+    const all = new Map<string, TxRef>();
+    for (const a of list) {
+      for (let p = 1; (p - 1) * 100 < need; p++) {
+        const rows = await one(a, p, 100);
+        rows.forEach((r) => all.set(r.hash, r));
+        if (rows.length < 100) break;
+      }
+    }
+    return [...all.values()].sort((x, y) => y.blockHeight - x.blockHeight || (x.hash < y.hash ? -1 : 1)).slice((page - 1) * count, need);
+  }
+
+  async accountAddresses(stakeAddress: string): Promise<string[]> {
+    const out: string[] = [];
+    for (let page = 1; page <= 20; page++) {
+      const rows = (await this.get<{ address: string }[]>(`/accounts/${stakeAddress}/addresses?count=100&page=${page}`)) ?? [];
+      out.push(...rows.map((r) => r.address));
+      if (rows.length < 100) break;
+    }
+    return out;
   }
 
   /** 2 requests per transaction (/txs/{h}, /utxos), 3 with metadata. Blockfrost has no batch endpoint. */

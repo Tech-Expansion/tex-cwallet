@@ -333,6 +333,9 @@ export class WalletApi {
     const m = this.manager;
     const connected = await this.connectedSet();
     if (method === "isEnabled") return connected.has(origin);
+    // AI-27 AC-003: a watch-only wallet holds no keys, so it does not talk to dApps at all.
+    const active = m.isUnlocked() ? m.listWallets().find((w) => w.id === m.active.walletId) : undefined;
+    if (active?.kind === "watch") throw new WalletError("NOT_FOUND", "Ví đang dùng là ví chỉ xem: không kết nối hay ký với dApp được");
     if (method === "enable") {
       const ok = await this.ask({ origin, kind: "enable" });
       if (!ok) throw new WalletError("LOCKED", "Người dùng từ chối kết nối");
