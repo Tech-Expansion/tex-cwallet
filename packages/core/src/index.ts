@@ -17,3 +17,4 @@ export * from "./koiosProvider";
 export * from "./history";
 export * from "./contacts";
 export * from "./nft";
+export * from "./signdata";

@@ -188,7 +188,8 @@ export class KoiosClient {
     const list = await this.post<{ tx_hash: string; block_time: number }[]>("/address_txs", { _addresses: [address] });
     const recent = list.sort((a, b) => b.block_time - a.block_time).slice(0, limit);
     if (!recent.length) return [];
-    const infos = await this.post<any[]>("/tx_info", { _tx_hashes: recent.map((t) => t.tx_hash) });
+    // _inputs: Koios leaves inputs out of tx_info by default; without them every transaction looked incoming.
+    const infos = await this.post<any[]>("/tx_info", { _tx_hashes: recent.map((t) => t.tx_hash), _inputs: true });
     const byHash = new Map(infos.map((i) => [i.tx_hash, i]));
     return recent.map((t) => {
       const info = byHash.get(t.tx_hash);

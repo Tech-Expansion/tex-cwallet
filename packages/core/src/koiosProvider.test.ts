@@ -54,6 +54,22 @@ describe("chọn nguồn dữ liệu cho testnet", () => {
   });
 });
 
+describe("lịch sử gần đây trên dashboard (Koios)", () => {
+  it("xin cả inputs trong tx_info: giao dịch gửi đi hiện số âm, không còn hiện cả tiền thối là tiền nhận", async () => {
+    const ME = "addr_test1me";
+    let txInfoBody: any;
+    const f = (async (url: string, init: any) => {
+      if (url.endsWith("/address_txs")) return json([{ tx_hash: "t1", block_time: 10 }]);
+      txInfoBody = JSON.parse(init.body);
+      // send 500 ADA from 8994.6 ADA: change 8494.3 back to me, fee 0.17
+      return json([{ tx_hash: "t1", inputs: [{ payment_addr: { bech32: ME }, value: "8994476461" }], outputs: [{ payment_addr: { bech32: "addr_test1other" }, value: "500000000" }, { payment_addr: { bech32: ME }, value: "8494307704" }] }]);
+    }) as never;
+    const [t] = await new KoiosClient("preprod", f, "https://k/api/v1").getHistory(ME, 3);
+    expect(txInfoBody._inputs).toBe(true);
+    expect(t!.netLovelace).toBe(-500_168_757n);
+  });
+});
+
 describe("thông báo lỗi gửi giao dịch dễ hiểu", async () => {
   const { explainSubmitError } = await import("./koiosProvider");
   it("lỗi 'All inputs are spent' (do giao dịch đã được gửi) được diễn giải", () => {

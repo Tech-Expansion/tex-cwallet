@@ -8,7 +8,7 @@ import { Unlock, Welcome, WalletForm } from "./Onboarding";
 import { Dashboard, Receive } from "./Home";
 import { Send } from "./Send";
 import { Activity } from "./Activity";
-import { Approve, Settings, Wallets } from "./Settings";
+import { Approve, Settings, VerifySignature, Wallets } from "./Settings";
 import { Multisig } from "./Multisig";
 import { Contacts } from "./Contacts";
 import { Nfts } from "./Nft";
@@ -80,6 +80,7 @@ function Unlocked({ st, refresh, route, go }: { st: AppState; refresh: () => voi
     case "/receive": return <Receive st={st} data={data} go={go} />;
     case "/wallets": return <Wallets st={st} refresh={refresh} go={go} />;
     case "/wallets/add": return <WalletForm initial="new" needPassword={false} onBack={() => go("/wallets")} onDone={() => { refresh(); go("/"); }} />;
+    case "/verify": return <VerifySignature go={go} />;
     case "/nfts": return <Nfts st={st} go={go} />;
     case "/contacts": return <Contacts st={st} go={go} />;
     case "/activity": return <WithNav route={route} go={go}><Activity st={st} /></WithNav>;
