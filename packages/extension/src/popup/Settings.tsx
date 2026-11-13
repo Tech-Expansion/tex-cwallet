@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Eye, EyeOff, Lock, Plus, Trash2, Check } from "lucide-react";
+import { BookUser, ChevronRight, Eye, EyeOff, Lock, Plus, Trash2, Check } from "lucide-react";
 import { rpc, type AppState, type Approval } from "./rpc";
 import { useAction } from "./hooks";
 import { usePrefs, useT, type Lang, type ThemePref } from "./i18n";
@@ -37,6 +37,10 @@ export function Settings({ st, refresh, go }: { st: AppState; refresh: () => voi
           <SectionLabel>{t("settings.language")}</SectionLabel>
           <Segmented<Lang> value={prefs.lang} onChange={(lang) => setPrefs({ lang })} options={[["vi", "Tiếng Việt"], ["en", "English"]] as const} />
         </div>
+
+        <button onClick={() => go("/contacts")} className="flex w-full items-center gap-2.5 rounded-xl border border-night-800 bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-contacts">
+          <BookUser size={16} className="text-accent" /><span className="flex-1">{t("contacts.title")}</span><ChevronRight size={15} className="text-moon-dim" />
+        </button>
 
         <Advanced st={st} refresh={refresh} />
 

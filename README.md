@@ -161,6 +161,19 @@ amounts are exact.
 Fees and min-UTxO always come from the live preprod protocol parameters; if they cannot be fetched, the wallet
 refuses to build the transaction.
 
+### Address book and ADA Handle
+
+**Cài đặt → Sổ địa chỉ** keeps contacts (name, preprod address, optional note). They are stored only in this
+browser's wallet state and never sent to a server; mainnet or malformed addresses are refused, and an address
+can be saved once.
+
+On **Gửi**, the book icon in the recipient field picks a contact. You can also type an ADA Handle such as
+`$alice`: the wallet looks up which preprod address holds that handle token (both the CIP-68 user token
+`000de140…` and the legacy name under policy `f0ff48bb…`) and shows the address for you to check before you
+sign. Handles held by several addresses, mainnet addresses and sub-handles (`x@y`) are refused. Handles minted
+under the newer decentralized-minting policy are not resolved yet. When the recipient is not in your book, the
+wallet warns that this is a first send and offers to save it.
+
 ### Activity and CSV export
 
 **Hoạt động** lists transactions newest first, 10 at a time (**Tải thêm** for more). Each row shows the date,

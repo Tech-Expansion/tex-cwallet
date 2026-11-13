@@ -119,6 +119,14 @@ export class KoiosClient {
     return [...totals].map(([unit, q]) => ({ unit, quantity: q.toString() }));
   }
 
+  async assetAddresses(unit: string): Promise<string[]> {
+    const q = `_asset_policy=${unit.slice(0, 56)}&_asset_name=${unit.slice(56)}`;
+    const r = await this.f(`${this.url}/asset_addresses?${q}`, { headers: { accept: "application/json" } });
+    if (!r.ok) throw new Error(`Koios asset_addresses lỗi ${r.status}`);
+    const rows = (await r.json()) as { payment_address: string; quantity: string }[];
+    return rows.filter((x) => BigInt(x.quantity) > 0n).map((x) => x.payment_address);
+  }
+
   /** Newest first. Koios accepts PostgREST paging/order on POST endpoints. */
   async listAddressTxs(address: string, page: number, count: number): Promise<TxRef[]> {
     const q = `order=block_height.desc,tx_hash.asc&limit=${count}&offset=${(page - 1) * count}`;

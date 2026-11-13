@@ -59,6 +59,21 @@ describe("WalletApi", () => {
     await expect(api.handle({ type: "historyPage", sharedId: "preprod-nope" })).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  it("AI-22: sổ địa chỉ qua RPC, khoá thì từ chối; resolveHandle", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    const me = ((await api.handle({ type: "account" })) as any).baseAddress as string;
+    const c: any = await api.handle({ type: "contactSave", name: "Tôi", address: me, note: "ví chính" });
+    expect(await api.handle({ type: "contactList" })).toEqual([c]);
+    await api.handle({ type: "contactSave", id: c.id, name: "Tôi 2", address: me });
+    expect(((await api.handle({ type: "contactList" })) as any)[0].name).toBe("Tôi 2");
+    await api.handle({ type: "contactRemove", id: c.id });
+    expect(await api.handle({ type: "contactList" })).toEqual([]);
+    await expect(api.handle({ type: "resolveHandle", handle: "nope" })).rejects.toMatchObject({ code: "INVALID_HANDLE" });
+    await api.handle({ type: "lock" });
+    await expect(api.handle({ type: "contactList" })).rejects.toMatchObject({ code: "LOCKED" });
+  });
+
   it("thao tác khi khóa bị từ chối; không lộ ví trong state", async () => {
     await api.handle({ type: "setup", password: PW });
     await api.handle({ type: "addWallet", name: "A", mnemonic: M });

@@ -15,6 +15,7 @@ export const fakeChain = (over: Partial<ChainClient> = {}): ChainClient => ({
   getHistory: async () => [],
   listAddressTxs: async () => [],
   getTxs: async () => [],
+  assetAddresses: async () => [],
   getProtocolParams: async () => { throw new Error("no params"); },
   findRegistrations: async () => [],
   txExists: async () => false,
