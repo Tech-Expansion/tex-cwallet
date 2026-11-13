@@ -14,3 +14,4 @@ export * from "./blockfrost";
 export * from "./shared";
 export * from "./registration";
 export * from "./koiosProvider";
+export * from "./history";

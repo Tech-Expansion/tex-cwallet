@@ -13,6 +13,8 @@ export const fakeChain = (over: Partial<ChainClient> = {}): ChainClient => ({
   getTip: async () => TIP,
   getBalance: async () => [],
   getHistory: async () => [],
+  listAddressTxs: async () => [],
+  getTxs: async () => [],
   getProtocolParams: async () => { throw new Error("no params"); },
   findRegistrations: async () => [],
   txExists: async () => false,

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, Droplet, RefreshCw, ShieldCheck } from "lucide-react";
 import { rpc, fmtAda, parseAda, shorten, type AppState, type NetInfo, type WalletMeta } from "./rpc";
-import { useAction, useHistory, useWalletData } from "./hooks";
+import { useAction, useWalletData } from "./hooks";
 import { useT } from "./i18n";
 import { ActionButton, Avatar, Button, Card, CopyField, ErrorText, Field, IconButton, Notice, Qr, Screen, SectionLabel, SignSheet, Spinner, Stars, TopBar, cx, showToast } from "./ui/ui";
 import { BackgroundGradient } from "./ui/aceternity/BackgroundGradient";
@@ -255,16 +255,5 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
         </SignSheet>
       )}
     </>
-  );
-}
-
-export function Activity({ st }: { st: AppState }) {
-  const t = useT();
-  const data = useHistory(st, 20);
-  return (
-    <Screen>
-      <TopBar title={t("activity.title")} right={<IconButton label={t("dash.refresh")} onClick={() => void data.reload()} disabled={data.loading}><RefreshCw size={15} className={data.loading ? "animate-spin" : ""} /></IconButton>} />
-      <div className="animate-fade-up"><TxList hist={data.hist} explorer={netOf(st).explorerTxUrl} /></div>
-    </Screen>
   );
 }

@@ -6,9 +6,10 @@ import { KoiosClient, type AssetBalance, type ChainTip, type TxSummary } from ".
 import { KoiosFetcher } from "./koiosProvider";
 import { BlockfrostClient } from "./blockfrost";
 import type { Registration } from "./registration";
+import type { HistorySource } from "./history";
 
 /** Mọi nguồn dữ liệu chuỗi (Koios, Blockfrost/proxy) đều tuân theo giao diện này. */
-export interface ChainClient {
+export interface ChainClient extends HistorySource {
   /** Current preprod chain tip */
   getTip(): Promise<ChainTip>;
   getBalance(addresses: string[]): Promise<AssetBalance[]>;

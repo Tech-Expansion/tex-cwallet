@@ -50,17 +50,3 @@ export function useWalletData(st: AppState) {
   useEffect(() => { setBal(undefined); setHist(undefined); void load(); }, [load]);
   return { addr, bal, hist, error, loading, reload: load };
 }
-
-/** Lịch sử đầy đủ (Blockfrost tốn 1 + N request) — chỉ tải khi người dùng mở tab Hoạt động. */
-export function useHistory(st: AppState, limit = 20) {
-  const [hist, setHist] = useState<Hist>();
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try { setHist(await rpc<Hist>({ type: "history", limit })); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); }
-  }, [st.network, st.active.walletId, st.active.account, limit]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { setHist(undefined); void load(); }, [load]);
-  return { hist, error, loading, reload: load };
-}

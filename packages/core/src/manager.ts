@@ -15,6 +15,7 @@ import {
 import { explainSubmitError } from "./koiosProvider";
 import { summarizeBalance, type WalletBalance } from "./balance";
 import { prepareSend, verifySendTx, minFeeFor, assertPreprodAddress, type SendRequest, type SendPreview, type PreparedSend } from "./send";
+import { analyzeTx, historyPage, historyRange, historyCsv, type HistoryPage, type TxDetail } from "./history";
 import { buildRegistrationTx, parseRegistration, fromParts, registrationMetadata } from "./registration";
 
 export interface WalletMeta {
@@ -298,6 +299,36 @@ export class WalletManager {
   async getHistory(limit = 20): Promise<TxSummary[]> {
     const a = await this.getAccount();
     return this.p().chain.getHistory(a.baseAddress, limit);
+  }
+
+  // ---------- transaction history (AI-21) ----------
+  /** Address whose history is shown: the active account, or a multisig wallet (AC-005). */
+  private async historyAddress(sharedId?: string): Promise<string> {
+    if (sharedId) {
+      const w = this.listShared().find((x) => x.id === sharedId);
+      if (!w) throw new WalletError("NOT_FOUND", "Không tìm thấy ví multisig");
+      return w.address;
+    }
+    return (await this.getAccount()).baseAddress;
+  }
+
+  /** One page of detailed history, newest first (AC-001). */
+  async historyPage(opts: { page?: number; count?: number; sharedId?: string } = {}): Promise<HistoryPage> {
+    return historyPage(this.p().chain, await this.historyAddress(opts.sharedId), opts.page, opts.count);
+  }
+
+  /** One transaction with inputs, outputs and metadata (AC-002). */
+  async txDetail(hash: string, sharedId?: string): Promise<TxDetail> {
+    if (!/^[0-9a-f]{64}$/i.test(hash)) throw new WalletError("NOT_FOUND", "Mã giao dịch không hợp lệ");
+    const address = await this.historyAddress(sharedId);
+    const [raw] = await this.p().chain.getTxs([hash], true);
+    if (!raw) throw new WalletError("NOT_FOUND", "Không tìm thấy giao dịch");
+    return analyzeTx(raw, address);
+  }
+
+  /** CSV of the transactions between two unix times in seconds (AC-004). */
+  async exportHistoryCsv(from: number, to: number, sharedId?: string): Promise<string> {
+    return historyCsv(await historyRange(this.p().chain, await this.historyAddress(sharedId), from, to));
   }
 
   // ---------- send ADA / native tokens (AI-5, AI-6) ----------

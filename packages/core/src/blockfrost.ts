@@ -1,5 +1,6 @@
 import type { Protocol } from "@meshsdk/core";
 import type { AssetBalance, ChainTip, TxSummary } from "./koios";
+import type { RawIO, RawTx, TxRef } from "./history";
 import { parseRegistration, registrationHasKey, REGISTRATION_LABEL, type Registration } from "./registration";
 
 type Fetch = typeof fetch;
@@ -45,6 +46,41 @@ export class BlockfrostClient {
         return { hash: t.tx_hash, blockTime: t.block_time, netLovelace: net };
       }),
     );
+  }
+
+  /** Newest first. */
+  async listAddressTxs(address: string, page: number, count: number): Promise<TxRef[]> {
+    const rows = (await this.get<{ tx_hash: string; block_time: number; block_height: number }[]>(`/addresses/${address}/transactions?order=desc&count=${count}&page=${page}`)) ?? [];
+    return rows.map((r) => ({ hash: r.tx_hash, blockTime: r.block_time, blockHeight: r.block_height }));
+  }
+
+  /** 2 requests per transaction (/txs/{h}, /utxos), 3 with metadata. Blockfrost has no batch endpoint. */
+  async getTxs(hashes: string[], withMetadata: boolean): Promise<RawTx[]> {
+    const io = (x: { address: string; amount: { unit: string; quantity: string }[] }): RawIO => ({
+      address: x.address,
+      lovelace: x.amount.find((a) => a.unit === "lovelace")?.quantity ?? "0",
+      assets: x.amount.filter((a) => a.unit !== "lovelace").map((a) => ({ unit: a.unit, quantity: a.quantity })),
+    });
+    const one = async (h: string): Promise<RawTx | null> => {
+      const [tx, u, meta] = await Promise.all([
+        this.get<{ hash: string; block_time: number; block_height: number; fees: string }>(`/txs/${h}`),
+        this.get<{ inputs: any[]; outputs: any[] }>(`/txs/${h}/utxos`),
+        withMetadata ? this.get<{ label: string; json_metadata: unknown }[]>(`/txs/${h}/metadata`) : Promise.resolve(undefined),
+      ]);
+      if (!tx || !u) return null;
+      return {
+        hash: h,
+        blockTime: tx.block_time,
+        blockHeight: tx.block_height,
+        fee: String(tx.fees),
+        inputs: (u.inputs ?? []).filter((i: any) => !i.collateral && !i.reference).map(io),
+        outputs: (u.outputs ?? []).filter((o: any) => !o.collateral).map(io),
+        metadata: meta === undefined ? undefined : Object.fromEntries((meta ?? []).map((m) => [m.label, m.json_metadata])),
+      };
+    };
+    const out: RawTx[] = [];
+    for (let i = 0; i < hashes.length; i += 10) out.push(...(await Promise.all(hashes.slice(i, i + 10).map(one))).filter((x): x is RawTx => !!x));
+    return out;
   }
 
   /**
