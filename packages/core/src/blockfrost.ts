@@ -1,6 +1,7 @@
 import type { Protocol } from "@meshsdk/core";
 import type { AssetBalance, ChainTip, TxSummary } from "./koios";
 import type { RawIO, RawTx, TxRef } from "./history";
+import type { RawNftMetadata } from "./nft";
 import { parseRegistration, registrationHasKey, REGISTRATION_LABEL, type Registration } from "./registration";
 
 type Fetch = typeof fetch;
@@ -46,6 +47,19 @@ export class BlockfrostClient {
         return { hash: t.tx_hash, blockTime: t.block_time, netLovelace: net };
       }),
     );
+  }
+
+  /** /assets/{unit}: Blockfrost already decodes CIP-25 and CIP-68 into onchain_metadata. One request per asset. */
+  async getNftMetadata(units: string[]): Promise<Record<string, RawNftMetadata>> {
+    const out: Record<string, RawNftMetadata> = {};
+    for (let i = 0; i < units.length; i += 10)
+      await Promise.all(units.slice(i, i + 10).map(async (u) => {
+        const a = await this.get<{ onchain_metadata?: Record<string, unknown> | null; onchain_metadata_standard?: string | null }>(`/assets/${u}`);
+        const m = a?.onchain_metadata;
+        if (!m || typeof m !== "object") return;
+        out[u] = /^CIP68/i.test(a?.onchain_metadata_standard ?? "") ? { cip68: m } : { cip25: m };
+      }));
+    return out;
   }
 
   async assetAddresses(unit: string): Promise<string[]> {

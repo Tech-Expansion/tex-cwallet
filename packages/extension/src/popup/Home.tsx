@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, Droplet, RefreshCw, ShieldCheck } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, Droplet, Image as ImageIcon, RefreshCw, ShieldCheck } from "lucide-react";
 import { rpc, fmtAda, parseAda, shorten, type AppState, type NetInfo, type WalletMeta } from "./rpc";
 import { useAction, useWalletData } from "./hooks";
 import { useT } from "./i18n";
@@ -108,6 +108,7 @@ export function Dashboard({ st, data, go }: { st: AppState; data: Data; go: (r: 
         <div className="flex justify-around">
           <ActionButton icon={<ArrowUpRight size={20} />} label={t("dash.send")} onClick={() => go("/send")} highlight disabled={watch} />
           <ActionButton icon={<ArrowDownLeft size={20} />} label={t("dash.receive")} onClick={() => go("/receive")} />
+          <ActionButton icon={<ImageIcon size={20} />} label="NFT" onClick={() => go("/nfts")} />
           {net.faucetUrl && <ActionButton icon={<Droplet size={20} />} label="Faucet" onClick={() => window.open(net.faucetUrl, "_blank")} />}
         </div>
 

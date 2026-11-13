@@ -74,6 +74,26 @@ describe("WalletApi", () => {
     await expect(api.handle({ type: "contactList" })).rejects.toMatchObject({ code: "LOCKED" });
   });
 
+  it("AI-24: nftList trả imageUrl đã lọc theo gateway; đổi gateway chỉ trong danh sách", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    const P = "a1".repeat(28);
+    const CID = "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG";
+    const chain = (api.manager as any).p().chain;
+    Object.assign(chain, {
+      getBalance: async () => [{ unit: P + "01", quantity: "1" }, { unit: P + "02", quantity: "1" }],
+      getNftMetadata: async () => ({ [P + "01"]: { cip25: { name: "A", image: `ipfs://${CID}` } }, [P + "02"]: { cip25: { name: "B", image: "https://evil.example/x.png" } } }),
+    });
+    (api.manager as any).p = () => ({ ...providers("preprod", {}), chain });
+    const st: any = await api.handle({ type: "state" });
+    expect(st.ipfsGateway).toBe("https://ipfs.io");
+    expect(st.ipfsGateways).toContain("https://dweb.link");
+    await api.handle({ type: "setIpfsGateway", gateway: "https://dweb.link" });
+    const list: any[] = (await api.handle({ type: "nftList" })) as any[];
+    expect(list.map((n) => [n.name, n.imageUrl])).toEqual([["A", `https://dweb.link/ipfs/${CID}`], ["B", undefined]]);
+    await expect(api.handle({ type: "setIpfsGateway", gateway: "https://evil.example" })).rejects.toThrow();
+  });
+
   it("thao tác khi khóa bị từ chối; không lộ ví trong state", async () => {
     await api.handle({ type: "setup", password: PW });
     await api.handle({ type: "addWallet", name: "A", mnemonic: M });

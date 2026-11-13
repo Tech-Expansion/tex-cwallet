@@ -51,7 +51,7 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; img-src 'self' data: https://ipfs.io https://dweb.link https://gateway.pinata.cloud https://nftstorage.link https://arweave.net"
   },
   "icons": {
     "16": "icons/icon-16.png",

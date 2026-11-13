@@ -21,7 +21,14 @@ const MAX_ROWS = 20;
 const MEMO_LINE_BYTES = 64;
 const MEMO_MAX_LINES = 16;
 let nextKey = 1;
-const newRow = (): Row => ({ key: nextKey++, to: "", amt: "", qty: {}, tokensOpen: false });
+let preset: Record<string, string> | undefined;
+/** Open Send with a token already filled in (NFT gallery, AI-24). Used once. */
+export const presetSend = (unit: string, quantity: string) => { preset = { [unit]: quantity }; };
+const newRow = (): Row => {
+  const qty = preset ?? {};
+  preset = undefined;
+  return { key: nextKey++, to: "", amt: "", qty, tokensOpen: Object.keys(qty).length > 0 };
+};
 
 /** Number of 64-byte CIP-20 lines a memo needs (same rule as the wallet core). */
 export function memoLineCount(text: string): number {

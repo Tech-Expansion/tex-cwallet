@@ -16,6 +16,7 @@ export const fakeChain = (over: Partial<ChainClient> = {}): ChainClient => ({
   listAddressTxs: async () => [],
   getTxs: async () => [],
   assetAddresses: async () => [],
+  getNftMetadata: async () => ({}),
   getProtocolParams: async () => { throw new Error("no params"); },
   findRegistrations: async () => [],
   txExists: async () => false,

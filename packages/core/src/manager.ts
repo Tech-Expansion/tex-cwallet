@@ -17,6 +17,7 @@ import { summarizeBalance, type WalletBalance } from "./balance";
 import { prepareSend, verifySendTx, minFeeFor, assertPreprodAddress, type SendRequest, type SendPreview, type PreparedSend } from "./send";
 import { analyzeTx, historyPage, historyRange, historyCsv, type HistoryPage, type TxDetail } from "./history";
 import { checkContact, resolveHandle, CONTACTS_MAX, type Contact, type ResolvedHandle } from "./contacts";
+import { NftCache, loadNfts, nftUnits, isIpfsGateway, DEFAULT_IPFS_GATEWAY, type Nft } from "./nft";
 import { buildRegistrationTx, parseRegistration, fromParts, registrationMetadata } from "./registration";
 
 export interface WalletMeta {
@@ -39,6 +40,8 @@ interface State {
   sharedHidden?: Record<string, string[]>;
   requests?: Record<string, SignRequest[]>;
   providerSettings?: ProviderSettings;
+  /** IPFS gateway for NFT images (AI-24), one of IPFS_GATEWAYS */
+  ipfsGateway?: string;
   /** Address book (AI-22): local only */
   contacts?: Contact[];
   /** Xác minh mật khẩu */
@@ -302,6 +305,29 @@ export class WalletManager {
   async getHistory(limit = 20): Promise<TxSummary[]> {
     const a = await this.getAccount();
     return this.p().chain.getHistory(a.baseAddress, limit);
+  }
+
+  // ---------- NFT gallery (AI-24) ----------
+  private nftCacheStore?: NftCache;
+  private get nftCache() {
+    return (this.nftCacheStore ??= new NftCache(this.store));
+  }
+
+  /** NFTs held by the active account (quantity 1 or CIP-68 user tokens) with their metadata. */
+  async listNfts(refresh = false): Promise<Nft[]> {
+    this.requireUnlocked();
+    const units = nftUnits(await this.getBalance());
+    return loadNfts(this.p().chain, this.nftCache, units, refresh);
+  }
+
+  get ipfsGateway(): string {
+    return isIpfsGateway(this.state.ipfsGateway) ? this.state.ipfsGateway : DEFAULT_IPFS_GATEWAY;
+  }
+
+  async setIpfsGateway(g: unknown) {
+    if (!isIpfsGateway(g)) throw new WalletError("NOT_FOUND", "Gateway IPFS không nằm trong danh sách cho phép");
+    this.state.ipfsGateway = g;
+    await this.save();
   }
 
   // ---------- address book + ADA Handle (AI-22) ----------
