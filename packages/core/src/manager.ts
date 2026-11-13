@@ -419,7 +419,11 @@ export class WalletManager {
       throw new WalletError("INVALID_TX", "Ví hoặc tài khoản đã đổi sau khi xem trước, hãy tạo lại");
     const params = await this.p().chain.getProtocolParams();
     // Re-check right before signing: balance, min-UTxO, the recipient and amounts that were previewed.
-    verifySendTx(p.unsignedTx, p.utxos, params, { to: p.preview.to, lovelace: p.preview.lovelace, assets: p.preview.assets, changeAddress: p.preview.change.address });
+    verifySendTx(p.unsignedTx, p.utxos, params, {
+      outputs: p.preview.recipients.map((r) => ({ to: r.to, lovelace: r.lovelace, assets: r.assets })),
+      changeAddress: p.preview.change.address,
+      memo: p.preview.memo,
+    });
     const wallet = await this.meshWallet();
     const signed = await wallet.signTx(p.unsignedTx);
     if (resolveTxHash(signed) !== txHash) throw new WalletError("INVALID_TX", "Nội dung giao dịch thay đổi khi ký");

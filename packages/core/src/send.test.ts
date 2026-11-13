@@ -173,3 +173,110 @@ describe("AI-6: gửi native token", () => {
     expect(() => verifySendTx(prepared.unsignedTx, [], PARAMS, exp)).toThrow(/input/);
   });
 });
+
+describe("AI-23: gửi nâng cao", () => {
+  const C = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong";
+  let to2 = "";
+  beforeEach(async () => { to2 = (await m.deriveFor(C)).baseAddress; });
+  const balanced = (d: ReturnType<typeof decode>) => { for (const [u, q] of d.ins) expect(d.outs.get(u)).toBe(q); for (const [u, q] of d.outs) expect(d.ins.get(u)).toBe(q); };
+
+  it("AC-001/004: nhiều người nhận (ADA + token) theo đúng thứ tự, mỗi output đạt min-UTxO, xem trước liệt kê từng người", async () => {
+    utxoAmounts = [[ada(10), tok(HOSKY, 40)], [ada(15)]];
+    const p = await m.prepareSend({ outputs: [{ to, lovelace: 3_000_000n }, { to: to2, assets: [{ unit: HOSKY, quantity: 15n }] }] });
+    const d = decode((m as any).pending.get(p.txHash).unsignedTx);
+    balanced(d);
+    for (const o of d.outputs) expect(o.coin >= o.min).toBe(true);
+    expect(d.outputs[0]!.address).toBe(to);
+    expect(d.outputs[0]!.coin).toBe(3_000_000n);
+    expect(d.outputs[1]!.address).toBe(to2);
+    expect([...d.outputs[1]!.assets]).toEqual([[HOSKY, 15n]]);
+    expect(p.recipients.map((r) => [r.to, r.lovelace])).toEqual([[to, 3_000_000n], [to2, d.outputs[1]!.coin]]);
+    expect(p.recipients[1]!.lovelace).toBe(p.recipients[1]!.minLovelace);
+    expect(p.totalLovelace).toBe(3_000_000n + d.outputs[1]!.coin + p.fee);
+    expect(p.change.assets).toEqual([{ unit: HOSKY, quantity: 25n }]);
+    expect(await m.confirmSend(p.txHash, PW)).toBe(p.txHash);
+  });
+
+  it("AC-001: từng người nhận được kiểm tra; lỗi chỉ rõ người nào", async () => {
+    utxoAmounts = [[ada(30)]];
+    await expect(m.prepareSend({ outputs: [{ to, lovelace: 2_000_000n }, { to: to2, lovelace: 5n }] })).rejects.toThrow(/#2/);
+    await expect(m.prepareSend({ outputs: [{ to, lovelace: 2_000_000n }, { to: toMainnet(to2), lovelace: 2_000_000n }] })).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+    await expect(m.prepareSend({ outputs: [] })).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+    await expect(m.prepareSend({ outputs: Array.from({ length: 21 }, () => ({ to, lovelace: 1_000_000n })) })).rejects.toThrow(/Tối đa 20/);
+    await expect(m.prepareSend({ outputs: [{ to, lovelace: 15_000_000n }, { to: to2, lovelace: 15_000_000n }] })).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
+  });
+
+  it("verifySendTx chặn đổi thứ tự / thiếu người nhận", async () => {
+    utxoAmounts = [[ada(20)]];
+    const utxos = (await providers("preprod", {}).fetcher.fetchAddressUTxOs(me)) as never;
+    const prepared = await prepareSend({ req: { outputs: [{ to, lovelace: 2_000_000n }, { to: to2, lovelace: 3_000_000n }] }, utxos, changeAddress: me, params: PARAMS });
+    const { verifySendTx } = await import("./send");
+    const ok = { outputs: [{ to, lovelace: 2_000_000n, assets: [] }, { to: to2, lovelace: 3_000_000n, assets: [] }], changeAddress: me };
+    expect(() => verifySendTx(prepared.unsignedTx, utxos, PARAMS, ok)).not.toThrow();
+    expect(() => verifySendTx(prepared.unsignedTx, utxos, PARAMS, { ...ok, outputs: [ok.outputs[1]!, ok.outputs[0]!] })).toThrow();
+    expect(() => verifySendTx(prepared.unsignedTx, utxos, PARAMS, { ...ok, outputs: [...ok.outputs, { to, lovelace: 1n, assets: [] }] })).toThrow(/đủ output/);
+  });
+
+  it("AC-002: gửi tối đa (chỉ ADA): tiêu mọi UTxO, không có tiền thối, người nhận = tổng − phí", async () => {
+    utxoAmounts = [[ada(3)], [ada(4.5)], [ada(10)]];
+    const p = await m.prepareSend({ to, max: true });
+    const d = decode((m as any).pending.get(p.txHash).unsignedTx);
+    balanced(d);
+    expect(d.ins.get("lovelace")).toBe(17_500_000n);
+    expect(d.outputs).toHaveLength(1);
+    expect(d.outputs[0]!.address).toBe(to);
+    expect(p).toMatchObject({ max: true, lovelace: 17_500_000n - p.fee, totalLovelace: 17_500_000n, change: { lovelace: 0n, assets: [] } });
+    expect(await m.confirmSend(p.txHash, PW)).toBe(p.txHash);
+  });
+
+  it("AC-002: gửi tối đa giữ token chưa chọn trong một output đúng min-UTxO; token đã chọn đi theo", async () => {
+    utxoAmounts = [[ada(5), tok(HOSKY, 9), tok(OTHER, 1)], [ada(6), tok(MIN, 4)]];
+    const p = await m.prepareSend({ to, max: true, assets: [{ unit: HOSKY, quantity: 9n }] });
+    const d = decode((m as any).pending.get(p.txHash).unsignedTx);
+    balanced(d);
+    const mine = d.outputs.filter((o) => o.address === me);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.coin).toBe(mine[0]!.min); // no change below or above min-UTxO
+    expect(Object.fromEntries(mine[0]!.assets)).toEqual({ [MIN]: 4n, [OTHER]: 1n });
+    const r = d.outputs.find((o) => o.address === to)!;
+    expect([...r.assets]).toEqual([[HOSKY, 9n]]);
+    expect(r.coin).toBe(11_000_000n - mine[0]!.coin - d.fee);
+  });
+
+  it("AC-002: gửi tối đa từ chối nhiều người nhận, số ADA cụ thể, gửi về chính ví, không đủ trả phí", async () => {
+    utxoAmounts = [[ada(5)]];
+    await expect(m.prepareSend({ outputs: [{ to }, { to: to2 }], max: true })).rejects.toThrow(/một người nhận/);
+    await expect(m.prepareSend({ to, lovelace: 2_000_000n, max: true })).rejects.toMatchObject({ code: "INVALID_AMOUNT" });
+    await expect(m.prepareSend({ to: me, max: true })).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+    utxoAmounts = [[ada(0.9)]];
+    await expect(m.prepareSend({ to, max: true })).rejects.toBeTruthy();
+  });
+
+  it("AC-003: memo CIP-20 (nhãn 674) chia dòng ≤ 64 byte, không cắt giữa ký tự UTF-8; xem trước có memo", async () => {
+    const { memoLines, txMemo } = await import("./send");
+    const long = "Tiền học tháng 11 — ".repeat(6);
+    const lines = memoLines(`Xin chào\n${long}`)!;
+    for (const l of lines) expect(new TextEncoder().encode(l).length).toBeLessThanOrEqual(64);
+    expect(lines.join("")).toBe(`Xin chào${long.trim()}`);
+    expect(memoLines("   ")).toBeUndefined();
+    expect(() => memoLines("x".repeat(64 * 17))).toThrow(/quá dài/);
+    utxoAmounts = [[ada(20)]];
+    const p = await m.prepareSend({ to, lovelace: 2_000_000n, memo: "Trả tiền cà phê ☕" });
+    expect(p.memo).toEqual(["Trả tiền cà phê ☕"]);
+    const tx = (m as any).pending.get(p.txHash).unsignedTx;
+    expect(txMemo(tx)).toEqual(["Trả tiền cà phê ☕"]);
+    expect(await m.confirmSend(p.txHash, PW)).toBe(p.txHash);
+    expect(txMemo(submitted[0]!)).toEqual(["Trả tiền cà phê ☕"]);
+  });
+
+  it("AC-003: verifySendTx từ chối memo bị đổi hoặc metadata không yêu cầu", async () => {
+    utxoAmounts = [[ada(20)]];
+    const utxos = (await providers("preprod", {}).fetcher.fetchAddressUTxOs(me)) as never;
+    const prepared = await prepareSend({ req: { to, lovelace: 2_000_000n, memo: "a" }, utxos, changeAddress: me, params: PARAMS });
+    const { verifySendTx } = await import("./send");
+    const base = { outputs: [{ to, lovelace: 2_000_000n, assets: [] }], changeAddress: me };
+    expect(() => verifySendTx(prepared.unsignedTx, utxos, PARAMS, { ...base, memo: ["a"] })).not.toThrow();
+    expect(() => verifySendTx(prepared.unsignedTx, utxos, PARAMS, { ...base, memo: ["b"] })).toThrow(/Ghi chú/);
+    expect(() => verifySendTx(prepared.unsignedTx, utxos, PARAMS, base)).toThrow(/Ghi chú/);
+  });
+});
