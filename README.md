@@ -171,6 +171,15 @@ More on **Gửi** (AI-23):
   character (up to 16 lines). The message is public on chain; the form says so. Before signing, the wallet checks
   that the transaction carries exactly this message and no other metadata.
 
+### Collateral for dApps
+
+**Cài đặt → Collateral cho dApp** creates the collateral that smart-contract dApps need: a preview, then a
+signed payment of exactly 5 ADA to your own address. Its output #0 is recorded per wallet account. CIP-30
+`getCollateral` returns only that ADA-only UTxO (`null` when there is none or it is smaller than the amount
+asked; amounts above 5 ADA are refused). While **Không dùng collateral khi gửi tiền thường** is on (default),
+normal sends, including send max, never spend it. **Bỏ collateral** forgets the mark; the 5 ADA stays as
+normal funds.
+
 ### NFTs
 
 **NFT** on the dashboard opens a gallery of the account's NFTs (tokens with quantity 1 and CIP-68 user tokens).
