@@ -12,6 +12,7 @@ import { Approve, Settings, VerifySignature, Wallets } from "./Settings";
 import { Multisig } from "./Multisig";
 import { Contacts } from "./Contacts";
 import { Nfts } from "./Nft";
+import { Staking } from "./Staking";
 import { Spinner, Toaster, cx } from "./ui/ui";
 
 function useHashRoute(): [string, (r: string) => void] {
@@ -81,6 +82,7 @@ function Unlocked({ st, refresh, route, go }: { st: AppState; refresh: () => voi
     case "/wallets": return <Wallets st={st} refresh={refresh} go={go} />;
     case "/wallets/add": return <WalletForm initial="new" needPassword={false} onBack={() => go("/wallets")} onDone={() => { refresh(); go("/"); }} />;
     case "/verify": return <VerifySignature go={go} />;
+    case "/staking": return <Staking st={st} go={go} />;
     case "/nfts": return <Nfts st={st} go={go} />;
     case "/contacts": return <Contacts st={st} go={go} />;
     case "/activity": return <WithNav route={route} go={go}><Activity st={st} /></WithNav>;

@@ -1,6 +1,7 @@
 import { MeshWallet, deserializeAddress } from "@meshsdk/core";
 import type { UTxO } from "@meshsdk/core";
-import { toValue, toTxUnspentOutput, Address, resolveTxHash, Serialization } from "@meshsdk/core-cst";
+import { toValue, toTxUnspentOutput, Address, resolveTxHash, Serialization, Bip32PrivateKey, Crypto, addVKeyWitnessSetToTransaction } from "@meshsdk/core-cst";
+import { mnemonicToEntropy } from "bip39";
 import { NETWORKS, DEFAULT_NETWORK, assertNetwork, UnsupportedNetworkError, type NetworkName } from "./networks";
 import { encrypt, decrypt, type EncryptedBlob } from "./vault";
 import { generateMnemonic, normalizeMnemonic, checkMnemonic, describeMnemonicProblem } from "./mnemonic";
@@ -20,6 +21,7 @@ import { analyzeTx, historyPage, historyRange, historyCsv, type HistoryPage, typ
 import { checkContact, resolveHandle, CONTACTS_MAX, type Contact, type ResolvedHandle } from "./contacts";
 import { NftCache, loadNfts, nftUnits, isIpfsGateway, DEFAULT_IPFS_GATEWAY, type Nft } from "./nft";
 import { parseAccountKey, deriveXpub, scanXpub, xpubAddressList, type XpubAddresses } from "./xpub";
+import { prepareStake, verifyStakeTx, type StakeAction, type StakeAccount, type StakeExpectation, type StakePreview, type PoolInfo } from "./staking";
 import { buildRegistrationTx, parseRegistration, fromParts, registrationMetadata } from "./registration";
 
 export interface WalletMeta {
@@ -455,7 +457,54 @@ export class WalletManager {
 
   // ---------- send ADA / native tokens (AI-5, AI-6) ----------
   /** Built transactions waiting for the user to confirm the preview. Only these can be signed. */
-  private pending = new Map<string, PreparedSend & { walletId?: string; account: number; network: NetworkName; expires: number; collateral?: boolean }>();
+  private pending = new Map<string, PreparedSend & { walletId?: string; account: number; network: NetworkName; expires: number; collateral?: boolean; stake?: StakeExpectation }>();
+
+  // ---------- staking (AI-28) ----------
+  /** Stake key of the active mnemonic account: m/1852'/1815'/a'/2/0 (private key only while signing). */
+  private async stakeKey() {
+    const w = this.getMeta(this.state.activeWalletId);
+    if (w.kind === "watch") throw new WalletError("NOT_FOUND", "Ví watch-only không thể ký");
+    await Crypto.ready();
+    const H = (n: number) => n + 0x80000000;
+    return Bip32PrivateKey.fromBip39Entropy(Buffer.from(mnemonicToEntropy(this.words(w.id).join(" ")), "hex"), "").derive([H(1852), H(1815), H(this.state.activeAccount), 2, 0]).toRawKey();
+  }
+
+  /** Stake address, registration, pool and withdrawable rewards of the active account. */
+  async stakeInfo(): Promise<StakeAccount & { stakeAddress: string; pool?: PoolInfo }> {
+    this.requireUnlocked();
+    const { rewardAddress } = await this.getAccount();
+    if (!rewardAddress) throw new WalletError("NOT_FOUND", "Ví này không có stake key");
+    const chain = this.p().chain;
+    const acc = await chain.getStakeAccount(rewardAddress);
+    const pool = acc.poolId ? (await chain.searchPools(acc.poolId).catch(() => []))[0] : undefined;
+    return { ...acc, stakeAddress: rewardAddress, ...(pool ? { pool } : {}) };
+  }
+
+  searchPools(query: string): Promise<PoolInfo[]> {
+    this.requireUnlocked();
+    return this.p().chain.searchPools(query);
+  }
+
+  /** Build an unsigned staking transaction and keep it for confirmSend (AC-001/002/004). */
+  async prepareStake(action: StakeAction): Promise<StakePreview> {
+    this.requireUnlocked();
+    const w = this.getMeta(this.state.activeWalletId);
+    if (w.kind === "watch") throw new WalletError("NOT_FOUND", "Ví watch-only không thể ký");
+    const acc = await this.getAccount();
+    const { fetcher, chain } = this.p();
+    const [params, account, all] = await Promise.all([chain.getProtocolParams().catch(() => undefined), chain.getStakeAccount(acc.rewardAddress), fetcher.fetchAddressUTxOs(acc.baseAddress)]);
+    const utxos = this.spendable(all);
+    const stakeKeyHash = (await this.stakeKey()).toPublic().hash().hex();
+    const built = await prepareStake({ action, account, utxos, params, changeAddress: acc.baseAddress, rewardAddress: acc.rewardAddress, stakeKeyHash });
+    const p = built.preview;
+    this.pending.clear();
+    this.pending.set(p.txHash, {
+      unsignedTx: built.unsignedTx, utxos, stake: built.expect,
+      preview: { txHash: p.txHash, to: acc.baseAddress, lovelace: 0n, minLovelace: 0n, assets: [], recipients: [], fee: p.fee, totalLovelace: p.fee + p.deposit, change: { address: acc.baseAddress, lovelace: p.change, assets: [] }, max: false },
+      walletId: this.state.activeWalletId, account: this.state.activeAccount, network: this.state.network, expires: Date.now() + PENDING_TTL_MS,
+    });
+    return p;
+  }
 
   // ---------- collateral (AI-25) ----------
   private get collateralKey() {
@@ -554,14 +603,26 @@ export class WalletManager {
     if (p.walletId !== this.state.activeWalletId || p.account !== this.state.activeAccount || p.network !== this.state.network)
       throw new WalletError("INVALID_TX", "Ví hoặc tài khoản đã đổi sau khi xem trước, hãy tạo lại");
     const params = await this.p().chain.getProtocolParams();
-    // Re-check right before signing: balance, min-UTxO, the recipient and amounts that were previewed.
-    verifySendTx(p.unsignedTx, p.utxos, params, {
-      outputs: p.preview.recipients.map((r) => ({ to: r.to, lovelace: r.lovelace, assets: r.assets })),
-      changeAddress: p.preview.change.address,
-      memo: p.preview.memo,
-    });
     const wallet = await this.meshWallet();
-    const signed = await wallet.signTx(p.unsignedTx);
+    let signed: string;
+    if (p.stake) {
+      // Staking: re-check certificates/withdrawal, then sign with the payment key and the stake key.
+      verifyStakeTx(p.unsignedTx, p.utxos, params, p.stake);
+      const paid = await wallet.signTx(p.unsignedTx, true);
+      const sk = await this.stakeKey();
+      const ws = new Serialization.TransactionWitnessSet();
+      const vk = new Serialization.VkeyWitness(sk.toPublic().hex() as never, sk.sign(resolveTxHash(p.unsignedTx) as never).hex() as never);
+      ws.setVkeys(Serialization.CborSet.fromCore([vk.toCore()], Serialization.VkeyWitness.fromCore));
+      signed = addVKeyWitnessSetToTransaction(paid as never, ws.toCbor() as never) as string;
+    } else {
+      // Re-check right before signing: balance, min-UTxO, the recipient and amounts that were previewed.
+      verifySendTx(p.unsignedTx, p.utxos, params, {
+        outputs: p.preview.recipients.map((r) => ({ to: r.to, lovelace: r.lovelace, assets: r.assets })),
+        changeAddress: p.preview.change.address,
+        memo: p.preview.memo,
+      });
+      signed = await wallet.signTx(p.unsignedTx);
+    }
     if (resolveTxHash(signed) !== txHash) throw new WalletError("INVALID_TX", "Nội dung giao dịch thay đổi khi ký");
     if (BigInt(p.preview.fee) < minFeeFor(signed, params)) throw new WalletError("INVALID_TX", "Phí thấp hơn mức tối thiểu sau khi ký");
     return signed;

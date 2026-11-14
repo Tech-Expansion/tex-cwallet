@@ -19,3 +19,4 @@ export * from "./contacts";
 export * from "./nft";
 export * from "./signdata";
 export * from "./xpub";
+export * from "./staking";

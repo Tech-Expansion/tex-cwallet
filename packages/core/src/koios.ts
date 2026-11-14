@@ -2,6 +2,7 @@ import { castProtocol } from "@meshsdk/common";
 import type { Protocol } from "@meshsdk/core";
 import { NETWORKS, type NetworkName } from "./networks";
 import type { RawIO, RawTx, TxRef } from "./history";
+import { isPoolId, type PoolInfo, type StakeAccount } from "./staking";
 import { cip25Entry, cip68FromDatum, splitUnit, CIP68_NFT_LABEL, CIP68_REF_LABEL, type RawNftMetadata } from "./nft";
 import { parseRegistration, registrationHasKey, REGISTRATION_LABEL, type Registration } from "./registration";
 
@@ -143,6 +144,36 @@ export class KoiosClient {
       if (cip68 || cip25) out[u] = { ...(cip68 ? { cip68 } : {}), ...(cip25 ? { cip25 } : {}) };
     }
     return out;
+  }
+
+  async getStakeAccount(stakeAddress: string): Promise<StakeAccount> {
+    const [a] = await this.post<{ status?: string; delegated_pool?: string | null; rewards_available?: string }[]>("/account_info", { _stake_addresses: [stakeAddress] });
+    return { registered: a?.status === "registered", poolId: a?.delegated_pool ?? undefined, rewards: BigInt(a?.rewards_available ?? 0) };
+  }
+
+  async searchPools(query: string): Promise<PoolInfo[]> {
+    const q = query.trim();
+    let ids: string[];
+    if (isPoolId(q)) ids = [q];
+    else {
+      if (!/^[A-Za-z0-9]{1,10}$/.test(q)) return [];
+      const r = await this.f(`${this.url}/pool_list?ticker=ilike.*${q}*&pool_status=eq.registered&limit=20`, { headers: { accept: "application/json" } });
+      if (!r.ok) throw new Error(`Koios pool_list lỗi ${r.status}`);
+      ids = ((await r.json()) as { pool_id_bech32: string }[]).map((x) => x.pool_id_bech32);
+    }
+    if (!ids.length) return [];
+    const rows = await this.post<any[]>("/pool_info", { _pool_bech32_ids: ids });
+    return rows.map((p) => ({
+      poolId: p.pool_id_bech32,
+      ticker: p.meta_json?.ticker ?? undefined,
+      name: p.meta_json?.name ?? undefined,
+      margin: Number(p.margin ?? 0),
+      fixedCost: BigInt(p.fixed_cost ?? 0),
+      pledge: BigInt(p.pledge ?? 0),
+      liveStake: BigInt(p.live_stake ?? 0),
+      saturation: p.live_saturation == null ? undefined : Number(p.live_saturation),
+      retiring: p.pool_status !== undefined && p.pool_status !== "registered",
+    }));
   }
 
   async accountAddresses(stakeAddress: string): Promise<string[]> {

@@ -1,4 +1,4 @@
-import { summarizeTx, inspectSignData, verifyDataSignature, type SignDataView, serializeBalance, serializeTxDetail, resolveImage, IPFS_GATEWAYS, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeStakePreview, serializePool, inspectSignData, verifyDataSignature, type SignDataView, serializeBalance, serializeTxDetail, resolveImage, IPFS_GATEWAYS, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -47,6 +47,9 @@ export type Req =
   | { type: "balance" }
   | { type: "walletBalance" }
   | { type: "history"; limit?: number }
+  | { type: "stakeInfo" }
+  | { type: "searchPools"; query: string }
+  | { type: "prepareStake"; action: "delegate" | "withdraw" | "deregister"; poolId?: string }
   | { type: "verifySignature"; payload: string; payloadIsHex?: boolean; signature: string; key: string; address?: string }
   | { type: "collateralStatus" }
   | { type: "prepareCollateral" }
@@ -192,6 +195,14 @@ export class WalletApi {
         return serializeBalance(await m.getWalletBalance());
       case "history":
         return (await m.getHistory(req.limit)).map((t) => ({ ...t, netLovelace: t.netLovelace.toString() }));
+      case "stakeInfo": {
+        const i = await m.stakeInfo();
+        return { ...i, rewards: i.rewards.toString(), ...(i.pool ? { pool: serializePool(i.pool) } : {}) };
+      }
+      case "searchPools":
+        return (await m.searchPools(String(req.query ?? ""))).map(serializePool);
+      case "prepareStake":
+        return serializeStakePreview(await m.prepareStake(req.action === "delegate" ? { kind: "delegate", poolId: String(req.poolId ?? "") } : req.action === "withdraw" ? { kind: "withdraw" } : { kind: "deregister" }));
       case "verifySignature":
         return verifyDataSignature({ payload: String(req.payload ?? ""), payloadIsHex: req.payloadIsHex === true, signature: String(req.signature ?? ""), key: String(req.key ?? ""), address: req.address });
       case "collateralStatus": {
