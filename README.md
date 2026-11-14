@@ -171,6 +171,18 @@ More on **Gửi** (AI-23):
   character (up to 16 lines). The message is public on chain; the form says so. Before signing, the wallet checks
   that the transaction carries exactly this message and no other metadata.
 
+### Staking
+
+**Stake** on the dashboard shows whether the stake key is registered, the pool it delegates to and the rewards
+that can be withdrawn. Search pools by ticker or `pool1…` id and compare saturation, margin, fixed cost and
+pledge (facts from the chain only; no reward forecasts). **Delegate** registers the stake key first when needed:
+the preview shows the 2 ADA deposit. **Rút thưởng** withdraws all rewards; **Huỷ đăng ký** withdraws everything,
+deregisters and shows the deposit refund. Before signing, `verifyStakeTx` checks that the transaction holds
+exactly the certificates of the chosen action for this wallet's stake key (and the chosen pool), a withdrawal
+only from this wallet's reward address of exactly the expected amount, wallet inputs only, all outputs back to
+the wallet and a balanced value. The wallet signs with the payment key and the stake key
+(`m/1852'/1815'/a'/2/0`). Watch-only wallets cannot stake. Staking rewards may be taxable; the screen says so.
+
 ### Watch-only from an account public key
 
 **Nhập ví → Chỉ xem** accepts a preprod address or an account public key (`acct_xvk…`, `xpub…` or 128 hex, as

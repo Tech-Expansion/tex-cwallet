@@ -2,6 +2,7 @@ import type { Protocol } from "@meshsdk/core";
 import type { AssetBalance, ChainTip, TxSummary } from "./koios";
 import type { RawIO, RawTx, TxRef } from "./history";
 import type { RawNftMetadata } from "./nft";
+import { isPoolId, type PoolInfo, type StakeAccount } from "./staking";
 import { parseRegistration, registrationHasKey, REGISTRATION_LABEL, type Registration } from "./registration";
 
 type Fetch = typeof fetch;
@@ -85,6 +86,39 @@ export class BlockfrostClient {
       }
     }
     return [...all.values()].sort((x, y) => y.blockHeight - x.blockHeight || (x.hash < y.hash ? -1 : 1)).slice((page - 1) * count, need);
+  }
+
+  async getStakeAccount(stakeAddress: string): Promise<StakeAccount> {
+    const a = await this.get<{ active: boolean; pool_id: string | null; withdrawable_amount: string }>(`/accounts/${stakeAddress}`);
+    return { registered: !!a?.active, poolId: a?.pool_id ?? undefined, rewards: BigInt(a?.withdrawable_amount ?? 0) };
+  }
+
+  /** Pool id: /pools/{id} + metadata. Ticker: the first 300 pools of /pools/extended, filtered here. */
+  async searchPools(query: string): Promise<PoolInfo[]> {
+    const q = query.trim();
+    const map = (p: any, meta?: any): PoolInfo => ({
+      poolId: p.pool_id,
+      ticker: meta?.ticker ?? p.metadata?.ticker ?? undefined,
+      name: meta?.name ?? p.metadata?.name ?? undefined,
+      margin: Number(p.margin_cost ?? 0),
+      fixedCost: BigInt(p.fixed_cost ?? 0),
+      pledge: BigInt(p.declared_pledge ?? 0),
+      liveStake: BigInt(p.live_stake ?? 0),
+      saturation: p.live_saturation == null ? undefined : Number(p.live_saturation) * 100,
+      retiring: Array.isArray(p.retirement) ? p.retirement.length > 0 : undefined,
+    });
+    if (isPoolId(q)) {
+      const [p, meta] = await Promise.all([this.get<any>(`/pools/${q}`), this.get<any>(`/pools/${q}/metadata`)]);
+      return p ? [map(p, meta)] : [];
+    }
+    if (!/^[A-Za-z0-9]{1,10}$/.test(q)) return [];
+    const out: PoolInfo[] = [];
+    for (let page = 1; page <= 3 && out.length < 20; page++) {
+      const rows = (await this.get<any[]>(`/pools/extended?count=100&page=${page}`)) ?? [];
+      out.push(...rows.filter((p) => String(p.metadata?.ticker ?? "").toLowerCase().includes(q.toLowerCase())).map((p) => map(p)));
+      if (rows.length < 100) break;
+    }
+    return out.slice(0, 20);
   }
 
   async accountAddresses(stakeAddress: string): Promise<string[]> {

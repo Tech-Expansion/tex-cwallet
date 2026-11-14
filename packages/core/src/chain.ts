@@ -10,9 +10,10 @@ import type { HistorySource } from "./history";
 import type { HandleSource } from "./contacts";
 import type { NftMetadataSource } from "./nft";
 import type { AccountAddressSource } from "./xpub";
+import type { StakeSource } from "./staking";
 
 /** Mọi nguồn dữ liệu chuỗi (Koios, Blockfrost/proxy) đều tuân theo giao diện này. */
-export interface ChainClient extends HistorySource, HandleSource, NftMetadataSource, AccountAddressSource {
+export interface ChainClient extends HistorySource, HandleSource, NftMetadataSource, AccountAddressSource, StakeSource {
   /** Current preprod chain tip */
   getTip(): Promise<ChainTip>;
   getBalance(addresses: string[]): Promise<AssetBalance[]>;

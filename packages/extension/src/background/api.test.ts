@@ -205,6 +205,21 @@ describe("WalletApi", () => {
     await expect(api.dapp("https://x.io", "enable")).rejects.toThrow(/chỉ xem/);
   });
 
+  it("AI-28: stakeInfo / prepareStake qua RPC trả số dạng chuỗi, cọc 2 ADA", async () => {
+    await api.handle({ type: "setup", password: PW });
+    await api.handle({ type: "addWallet", name: "A", mnemonic: M });
+    const { bech32 } = await import("bech32");
+    const P1 = bech32.encode("pool", bech32.toWords(Buffer.alloc(28, 1)));
+    const chain = (api.manager as any).p().chain;
+    Object.assign(chain, { getStakeAccount: async () => ({ registered: false, rewards: 0n }), searchPools: async () => [{ poolId: P1, ticker: "ONE", margin: 0.01, fixedCost: 340000000n, pledge: 1n, liveStake: 2n }] });
+    (api.manager as any).p = () => ({ ...providers("preprod", {}), chain });
+    expect(await api.handle({ type: "stakeInfo" })).toMatchObject({ registered: false, rewards: "0" });
+    expect(((await api.handle({ type: "searchPools", query: "one" })) as any[])[0]).toMatchObject({ ticker: "ONE", fixedCost: "340000000" });
+    const p: any = await api.handle({ type: "prepareStake", action: "delegate", poolId: P1 });
+    expect(p).toMatchObject({ certs: ["reg", "deleg"], deposit: "2000000", refund: "0" });
+    expect(await api.handle({ type: "confirmSend", txHash: p.txHash, password: PW })).toHaveLength(64);
+  });
+
   it("đổi ví/mạng hoặc khóa sẽ ngắt kết nối dApp", async () => {
     await api.handle({ type: "setup", password: PW });
     const w: any = await api.handle({ type: "addWallet", name: "A", mnemonic: M });
