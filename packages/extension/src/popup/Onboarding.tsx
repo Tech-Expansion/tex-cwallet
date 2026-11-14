@@ -84,7 +84,7 @@ export function WalletForm({ initial, needPassword, onDone, onBack }: { initial:
           </>
         )}
         {mode === "import" && <Field label={t("import.words")}><textarea className="field min-h-[96px] resize-none" value={text} onChange={(e) => setText(e.target.value)} /></Field>}
-        {mode === "watch" && <Field label={t("import.watchAddr")}><textarea className="field min-h-[72px] resize-none font-mono" value={text} onChange={(e) => setText(e.target.value)} /></Field>}
+        {mode === "watch" && <Field label={t("import.watchAddr")} hint={t("import.watchHint")}><textarea className="field min-h-[72px] resize-none font-mono" value={text} onChange={(e) => setText(e.target.value)} data-testid="watch-input" /></Field>}
         <ErrorText error={save.error || gen.error} />
       </div>
     </Screen>

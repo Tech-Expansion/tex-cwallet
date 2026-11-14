@@ -18,3 +18,4 @@ export * from "./history";
 export * from "./contacts";
 export * from "./nft";
 export * from "./signdata";
+export * from "./xpub";

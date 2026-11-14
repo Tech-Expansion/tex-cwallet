@@ -171,6 +171,16 @@ More on **Gửi** (AI-23):
   character (up to 16 lines). The message is public on chain; the form says so. Before signing, the wallet checks
   that the transaction carries exactly this message and no other metadata.
 
+### Watch-only from an account public key
+
+**Nhập ví → Chỉ xem** accepts a preprod address or an account public key (`acct_xvk…`, `xpub…` or 128 hex, as
+exported by Eternl/Yoroi/cardano-address). Private keys (`acct_xsk…`, `xprv…`, longer hex) are refused and never
+echoed back. With an account key the wallet derives base addresses `m/1852'/1815'/a'/{0,1}/i` with the account's
+stake key, finds the used ones from the stake address (Koios `account_addresses` / Blockfrost
+`/accounts/{stake}/addresses`) and scans each role until 20 unused addresses in a row. Balance and history merge
+all of them (change to internal addresses counts as yours); **Nhận** shows the first unused external address.
+Watch-only wallets cannot send or sign, and dApps cannot connect to them.
+
 ### Signing data for dApps and checking signatures
 
 When a dApp calls CIP-30 `signData`, the approval window shows the dApp origin, the signing address (bech32),

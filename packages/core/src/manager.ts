@@ -19,6 +19,7 @@ import { prepareSend, verifySendTx, minFeeFor, assertPreprodAddress, type SendRe
 import { analyzeTx, historyPage, historyRange, historyCsv, type HistoryPage, type TxDetail } from "./history";
 import { checkContact, resolveHandle, CONTACTS_MAX, type Contact, type ResolvedHandle } from "./contacts";
 import { NftCache, loadNfts, nftUnits, isIpfsGateway, DEFAULT_IPFS_GATEWAY, type Nft } from "./nft";
+import { parseAccountKey, deriveXpub, scanXpub, xpubAddressList, type XpubAddresses } from "./xpub";
 import { buildRegistrationTx, parseRegistration, fromParts, registrationMetadata } from "./registration";
 
 export interface WalletMeta {
@@ -28,6 +29,8 @@ export interface WalletMeta {
   accounts: { index: number; name: string }[];
   /** chỉ cho watch-only */
   address?: string;
+  /** watch-only from an account public key (AI-27): 128 hex, public only */
+  xpub?: string;
   vault?: EncryptedBlob;
 }
 
@@ -208,15 +211,46 @@ export class WalletManager {
     return meta;
   }
 
-  async addWatchWallet(name: string, address: string): Promise<WalletMeta> {
+  /** Watch-only wallet from an address, or from an account public key acct_xvk/xpub (AI-27). Never a private key. */
+  async addWatchWallet(name: string, input: string): Promise<WalletMeta> {
     this.requireUnlocked();
-    this.assertAddress(address);
-    const meta: WalletMeta = { id: crypto.randomUUID(), name, kind: "watch", accounts: [{ index: 0, name: "Watch" }], address };
+    const text = String(input ?? "").trim();
+    let meta: WalletMeta;
+    if (/^(addr|stake)/i.test(text)) {
+      this.assertAddress(text);
+      meta = { id: crypto.randomUUID(), name, kind: "watch", accounts: [{ index: 0, name: "Watch" }], address: text };
+    } else {
+      const xpub = parseAccountKey(text);
+      if (this.state.wallets.some((w) => w.xpub === xpub)) throw new WalletError("NOT_FOUND", "Khoá công khai này đã có trong danh sách ví");
+      const first = (await deriveXpub(xpub, this.state.network)).address(0, 0);
+      meta = { id: crypto.randomUUID(), name, kind: "watch", accounts: [{ index: 0, name: "Watch" }], address: first, xpub };
+    }
     this.state.wallets.push(meta);
     this.state.activeWalletId ??= meta.id;
     await this.save();
     return meta;
   }
+
+  // ---------- watch-only xpub (AI-27) ----------
+  private xpubScans = new Map<string, { at: number; data: XpubAddresses }>();
+
+  /** Addresses of an xpub watch wallet (gap limit 20), cached for a minute. */
+  async xpubAddresses(walletId = this.state.activeWalletId): Promise<XpubAddresses | undefined> {
+    const w = walletId ? this.state.wallets.find((x) => x.id === walletId) : undefined;
+    if (!w?.xpub) return undefined;
+    const hit = this.xpubScans.get(w.id);
+    if (hit && Date.now() - hit.at < 60_000) return hit.data;
+    const data = await scanXpub(w.xpub, this.state.network, this.p().chain);
+    this.xpubScans.set(w.id, { at: Date.now(), data });
+    return data;
+  }
+
+  /** Every address the active account reads balance/history from. */
+  private async accountAddressList(): Promise<string[]> {
+    const x = await this.xpubAddresses();
+    return x ? xpubAddressList(x) : [(await this.getAccount()).baseAddress];
+  }
+
 
   async removeWallet(id: string) {
     this.requireUnlocked();
@@ -292,14 +326,16 @@ export class WalletManager {
   // ---------- đọc dữ liệu chuỗi ----------
   async getAccount(walletId = this.state.activeWalletId, account = this.state.activeAccount): Promise<DerivedAccount> {
     const w = this.getMeta(walletId);
-    if (w.kind === "watch") return { index: 0, baseAddress: w.address!, rewardAddress: "" };
+    if (w.kind === "watch") {
+      const x = w.xpub ? await this.xpubAddresses(w.id) : undefined;
+      return { index: 0, baseAddress: x?.receive ?? w.address!, rewardAddress: x?.stakeAddress ?? "" };
+    }
     const words = this.words(w.id);
     return deriveAccount(words, this.state.network, account);
   }
 
   async getBalance(): Promise<AssetBalance[]> {
-    const a = await this.getAccount();
-    return this.p().chain.getBalance([a.baseAddress]);
+    return this.p().chain.getBalance(await this.accountAddressList());
   }
 
   /**
@@ -316,6 +352,8 @@ export class WalletManager {
   }
 
   async getHistory(limit = 20): Promise<TxSummary[]> {
+    const x = await this.xpubAddresses();
+    if (x) return (await historyPage(this.p().chain, xpubAddressList(x), 1, limit)).items.map((t) => ({ hash: t.hash, blockTime: t.blockTime, netLovelace: t.netLovelace }));
     const a = await this.getAccount();
     return this.p().chain.getHistory(a.baseAddress, limit);
   }
@@ -386,13 +424,14 @@ export class WalletManager {
 
   // ---------- transaction history (AI-21) ----------
   /** Address whose history is shown: the active account, or a multisig wallet (AC-005). */
-  private async historyAddress(sharedId?: string): Promise<string> {
+  private async historyAddress(sharedId?: string): Promise<string | string[]> {
     if (sharedId) {
       const w = this.listShared().find((x) => x.id === sharedId);
       if (!w) throw new WalletError("NOT_FOUND", "Không tìm thấy ví multisig");
       return w.address;
     }
-    return (await this.getAccount()).baseAddress;
+    const list = await this.accountAddressList();
+    return list.length === 1 ? list[0]! : list;
   }
 
   /** One page of detailed history, newest first (AC-001). */

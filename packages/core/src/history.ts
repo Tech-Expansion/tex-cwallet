@@ -57,8 +57,8 @@ export interface HistoryPage {
 
 /** Data source operations the history needs (part of ChainClient). */
 export interface HistorySource {
-  /** Transactions of an address, newest first; page starts at 1 */
-  listAddressTxs(address: string, page: number, count: number): Promise<TxRef[]>;
+  /** Transactions of one or several addresses (merged, no duplicates), newest first; page starts at 1 */
+  listAddressTxs(address: string | string[], page: number, count: number): Promise<TxRef[]>;
   /** Full transactions; metadata only when withMetadata (costs one extra request per tx on Blockfrost) */
   getTxs(hashes: string[], withMetadata: boolean): Promise<RawTx[]>;
 }
@@ -110,7 +110,7 @@ export function analyzeTx(raw: RawTx, mine: string | string[]): TxDetail {
 const clampCount = (n: number) => Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(n) || 10));
 
 /** One page of history (newest first). hasMore is true when the page was full. */
-export async function historyPage(src: HistorySource, address: string, page = 1, count = 10, withMetadata = false): Promise<HistoryPage> {
+export async function historyPage(src: HistorySource, address: string | string[], page = 1, count = 10, withMetadata = false): Promise<HistoryPage> {
   const size = clampCount(count);
   const refs = await src.listAddressTxs(address, Math.max(1, Math.floor(page) || 1), size);
   if (!refs.length) return { items: [], hasMore: false };
@@ -129,7 +129,7 @@ export class HistoryError extends Error {}
  * All transactions with blockTime in [from, to] (unix seconds, inclusive), newest first.
  * Walks the list pages until it passes `from`; refuses more than `max` transactions.
  */
-export async function historyRange(src: HistorySource, address: string, from: number, to: number, max = MAX_EXPORT_TXS): Promise<TxDetail[]> {
+export async function historyRange(src: HistorySource, address: string | string[], from: number, to: number, max = MAX_EXPORT_TXS): Promise<TxDetail[]> {
   if (!Number.isFinite(from) || !Number.isFinite(to) || from > to) throw new HistoryError("Khoảng thời gian không hợp lệ");
   const picked: TxRef[] = [];
   for (let page = 1; ; page++) {
