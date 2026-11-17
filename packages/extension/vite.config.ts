@@ -8,19 +8,7 @@ const polyfills = nodePolyfills({ globals: { Buffer: true, global: true, process
 
 // main: popup + background (ES module). page: content/provider, mỗi file là IIFE độc lập.
 export default defineConfig(
-  target === "web"
-    ? {
-        plugins: [react(), polyfills],
-        publicDir: "public",
-        build: {
-          outDir: "dist-web",
-          emptyOutDir: true,
-          target: "es2022",
-          commonjsOptions: { strictRequires: true },
-          rollupOptions: { input: { index: resolve(__dirname, "web.html") } },
-        },
-      }
-    : target === "main"
+  target === "main"
     ? {
         plugins: [react(), polyfills],
         base: "./",
