@@ -56,7 +56,11 @@ export interface SharedWalletInfo {
 }
 export interface TxPreview {
   txHash: string; fee: string; ttl?: number; signedBy: string[]; enough: boolean;
-  outputs: { address: string; lovelace: string; tokens: number; change: boolean }[];
+  outputs: { address: string; lovelace: string; tokens: number; assets: { unit: string; quantity: string }[]; change: boolean }[];
+  /** CIP-20 message inside the transaction */
+  memo?: string;
+  /** What leaves the wallet, fee included; only after the inputs were checked against the wallet's UTxOs (AI-45) */
+  net?: { lovelace: string; assets: { unit: string; quantity: string }[] };
 }
 export type SharedInput = { kind: "signRequest"; walletId: string } | { kind: "wallet" } | { kind: "cosignerKey"; keyHash: string } | { kind: "unknown" };
 export interface RequestItem { request: string; memo?: string; createdAt: number; preview: TxPreview; iSigned: boolean; stale: boolean; expired: boolean; slotsLeft?: number }
