@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, production]
+  push:
+    branches: [main, production]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # typecheck, check-preprod (network and secret lint) and every unit test
+      - run: npm run check
+
+      - run: npm run build
+
+      - name: Zip the extension
+        id: zip
+        run: |
+          version=$(node -p "require('./packages/extension/dist/manifest.json').version")
+          name="tex-wallet-${version}-${GITHUB_SHA::7}.zip"
+          (cd packages/extension/dist && zip -qr "$GITHUB_WORKSPACE/$name" .)
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.zip.outputs.name }}
+          path: ${{ steps.zip.outputs.name }}
+          if-no-files-found: error
+          retention-days: 30
