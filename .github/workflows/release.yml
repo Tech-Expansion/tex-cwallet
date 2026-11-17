@@ -1,0 +1,134 @@
+name: Release
+
+# Merging a release branch into `production` publishes the version in packages/extension/package.json:
+# a GitHub Release with the zip and its SHA-256, then an upload to the Chrome Web Store (submitted for review).
+# See docs/release.md.
+
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the tag and the GitHub Release
+  id-token: write # OIDC token for Workload Identity Federation (Chrome Web Store)
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    if: github.ref == 'refs/heads/production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, to skip a version that was already released
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+      - name: Version
+        id: v
+        run: |
+          version=$(node -p "require('./packages/extension/dist/manifest.json').version")
+          pkg=$(node -p "require('./packages/extension/package.json').version")
+          if [ "$version" != "$pkg" ]; then
+            echo "::error::manifest.json is $version but packages/extension/package.json is $pkg"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::notice::v$version is already released. Bump the version to publish again."
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Zip and checksum
+        if: steps.v.outputs.new == 'true'
+        id: zip
+        run: |
+          name="tex-wallet-${{ steps.v.outputs.version }}.zip"
+          (cd packages/extension/dist && zip -qrX "$GITHUB_WORKSPACE/$name" .)
+          sha256sum "$name" > "$name.sha256"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "sha=$(cut -d' ' -f1 "$name.sha256")" >> "$GITHUB_OUTPUT"
+
+      - name: GitHub Release
+        if: steps.v.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+          ZIP: ${{ steps.zip.outputs.name }}
+          SHA: ${{ steps.zip.outputs.sha }}
+        run: |
+          cat > notes.md <<EOF
+          TEX Wallet $VERSION. **Not audited**: see SECURITY.md.
+
+          Install from the zip: unzip it, open \`chrome://extensions\`, turn on Developer mode, **Load unpacked** the folder.
+          A zip install does not update itself.
+
+          SHA-256 of \`$ZIP\`: \`$SHA\`
+          EOF
+          gh release create "v$VERSION" "$ZIP" "$ZIP.sha256" --target "$GITHUB_SHA" --title "TEX Wallet $VERSION" --notes-file notes.md --generate-notes
+
+      - name: Chrome Web Store settings
+        if: steps.v.outputs.new == 'true'
+        id: cws
+        env:
+          PUBLISHER: ${{ vars.CWS_PUBLISHER_ID }}
+          ITEM: ${{ vars.CWS_EXTENSION_ID }}
+          PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$PUBLISHER" ] && [ -n "$ITEM" ] && [ -n "$PROVIDER" ] && [ -n "$ACCOUNT" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Chrome Web Store upload skipped: set the repository variables CWS_PUBLISHER_ID, CWS_EXTENSION_ID, GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT (docs/release.md)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Google auth (Workload Identity Federation)
+        if: steps.cws.outputs.enabled == 'true'
+        id: gcp
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+
+      - name: Upload to the Chrome Web Store and submit for review
+        if: steps.cws.outputs.enabled == 'true'
+        env:
+          TOKEN: ${{ steps.gcp.outputs.access_token }}
+          PUBLISHER: ${{ vars.CWS_PUBLISHER_ID }}
+          ITEM: ${{ vars.CWS_EXTENSION_ID }}
+          ZIP: ${{ steps.zip.outputs.name }}
+        run: |
+          item="https://chromewebstore.googleapis.com/v2/publishers/$PUBLISHER/items/$ITEM"
+          upload="https://chromewebstore.googleapis.com/upload/v2/publishers/$PUBLISHER/items/$ITEM:upload"
+          auth="Authorization: Bearer $TOKEN"
+          curl -fsS -X POST -H "$auth" -T "$ZIP" "$upload" | tee upload.json
+          state=$(jq -r '.uploadState // empty' upload.json)
+          for _ in $(seq 1 30); do
+            [ "$state" = "UPLOAD_IN_PROGRESS" ] || break
+            sleep 10
+            state=$(curl -fsS -H "$auth" "$item:fetchStatus" | jq -r '.lastAsyncUploadState // empty')
+          done
+          echo "Upload state: $state"
+          case "$state" in
+            *FAIL*|*NOT_FOUND*|UPLOAD_IN_PROGRESS|"") echo "::error::Chrome Web Store upload did not succeed ($state)"; exit 1 ;;
+          esac
+          curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" -d '{"publishType":"DEFAULT_PUBLISH"}' "$item:publish" | tee publish.json
+          echo "::notice::Submitted to the Chrome Web Store: $(jq -r '.state // "unknown"' publish.json)"
