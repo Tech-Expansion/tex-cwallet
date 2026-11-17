@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MeshWallet, resolvePaymentKeyHash } from "@meshsdk/core";
-import { Serialization } from "@meshsdk/core-cst";
-import { sharedKeyHash, signWithSharedKey, buildPaymentScript, makeSharedWallet, buildSharedSend, inspectSharedTx, attachWitnesses, readWitnesses, scriptFromCbor, scriptCborOf, scriptHashOf, toKeyHash, SharedError } from "./shared";
+import { Cardano, Serialization } from "@meshsdk/core-cst";
+import { sharedKeyHash, signWithSharedKey, buildPaymentScript, makeSharedWallet, buildSharedSend, inspectSharedTx, attachWitnesses, readWitnesses, scriptFromCbor, scriptCborOf, scriptAddress, sharedAddress, type NativeScriptJson, scriptHashOf, toKeyHash, SharedError } from "./shared";
 
 const W = [
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
@@ -50,6 +50,28 @@ describe("script & địa chỉ", () => {
     expect(scriptHashOf(back)).toBe(wallet.paymentScriptHash);
     expect(makeSharedWallet({ name: "i", network: "preprod", paymentScript: back }).address).toBe(wallet.address);
     expect(() => scriptFromCbor("zz")).toThrow(SharedError);
+  });
+  it("TEX Wallet on-chain scripts give the base address with script payment and script stake credentials", () => {
+    const sigs = (...k: string[]) => k.map((keyHash) => ({ type: "sig" as const, keyHash }));
+    // exactly as registered on chain: the key order is part of the hash, so do not go through buildPaymentScript
+    const payment: NativeScriptJson = { type: "atLeast", required: 2, scripts: sigs("4c8be8de00479f8cc78364aef40ca4c2595871596ee1781f036b335c", "67f4d8c4097a2da508fb3fc2ea9f09604129fb71d834e1f558181f6d", "0c64be2644a74a4fdddae5b01aa213588d14db5772b6bfb10ffcc892") };
+    const stake: NativeScriptJson = { type: "atLeast", required: 2, scripts: sigs("d8db94667f661c4b7958653e048d8e114da35c75ababf82267eef4cf", "ba7523df270aadd3a3382bac1536664c7cb7ba256fa7eff2eada9bce", "df53300dc9691d4b0804f85c3dfc10819208286c1527fd668db94390") };
+    expect(scriptHashOf(payment)).toBe("df741395fabffd04a487478ec1522e30e7968b5684f6a564aa4ee29d");
+    expect(scriptHashOf(stake)).toBe("f10b13fb815fb4bd7d6d023564443e4596cf8a783c202c30e2152184");
+    // The repo lint blocks mainnet bech32 literals until AI-47, so check the decoded address instead of the string.
+    // For TEX Wallet on mainnet it must be the base address "addr1x80hgyu…cw46q" (verified against Koios on 2026-11-17).
+    const main = scriptAddress(payment, 1, stake);
+    expect(main.startsWith("addr1x80hgyu4l2ll6p")).toBe(true);
+    expect(main.endsWith("pcs4yxzq7cw46q")).toBe(true);
+    const props = Cardano.Address.fromBech32(main).getProps();
+    expect(props.type).toBe(Cardano.AddressType.BasePaymentScriptStakeScript);
+    expect(props.networkId).toBe(1);
+    expect(props.paymentPart).toEqual({ type: Cardano.CredentialType.ScriptHash, hash: "df741395fabffd04a487478ec1522e30e7968b5684f6a564aa4ee29d" });
+    expect(props.delegationPart).toEqual({ type: Cardano.CredentialType.ScriptHash, hash: "f10b13fb815fb4bd7d6d023564443e4596cf8a783c202c30e2152184" });
+    expect(sharedAddress(payment, "preprod", stake)).toMatch(/^addr_test1x/);
+    // without a stake script it stays the enterprise address
+    expect(Cardano.Address.fromBech32(scriptAddress(payment, 1)).getProps().type).toBe(Cardano.AddressType.EnterpriseScript);
+    expect(sharedAddress(payment, "preprod")).toMatch(/^addr_test1w/);
   });
   it("cấu hình sai bị từ chối", async () => {
     const { kh } = await setup();

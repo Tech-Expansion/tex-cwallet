@@ -11,7 +11,7 @@ import { defaultProviders, type ProviderFactory, type ProviderSettings } from ".
 import type { KeyValueStore } from "./storage";
 import { WalletError } from "./errors";
 import {
-  sharedKeyHash, signWithSharedKey, buildPaymentScript, makeSharedWallet, buildSharedSend, inspectSharedTx, attachWitnesses, readWitnesses,
+  sharedKeyHash, signWithSharedKey, buildPaymentScript, makeSharedWallet, sharedAddress, buildSharedSend, inspectSharedTx, attachWitnesses, readWitnesses,
   scriptFromCbor, scriptHashOf, cosignerKeyHash, keysOf, SharedError, type SharedWallet, type Signer, type TxPreview, type NativeScriptJson,
 } from "./shared";
 import { explainSubmitError } from "./koiosProvider";
@@ -116,6 +116,14 @@ export class WalletManager {
     if (s) {
       // Old multi-network state may hold wallets or sign requests of other networks: refuse to load it.
       assertStoredNetwork(s.network);
+      // The stored address of a multisig wallet with a stake script was wrong before AI-44: derive it again.
+      // A bad stored script must not block loading the other wallets, so keep the stored address then.
+      for (const w of s.shared ?? []) {
+        if (!Object.hasOwn(NETWORKS, w.network)) continue;
+        try {
+          w.address = sharedAddress(w.paymentScript, w.network, w.stakeScript);
+        } catch { /* keep the stored address */ }
+      }
       this.state = s;
     }
     this.loaded = true;
