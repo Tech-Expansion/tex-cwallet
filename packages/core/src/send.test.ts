@@ -164,7 +164,7 @@ describe("AI-6: gửi native token", () => {
 
   it("verifySendTx chặn giao dịch bị sửa (đổi người nhận / số lượng)", async () => {
     utxoAmounts = [[ada(20), tok(HOSKY, 50)]];
-    const prepared = await prepareSend({ req: { to, assets: [{ unit: HOSKY, quantity: 5n }] }, utxos: (await providers("preprod", {}).fetcher.fetchAddressUTxOs(me)) as never, changeAddress: me, params: PARAMS });
+    const prepared = await prepareSend({ req: { to, assets: [{ unit: HOSKY, quantity: 5n }] }, utxos: (await providers("preprod").fetcher.fetchAddressUTxOs(me)) as never, changeAddress: me, params: PARAMS });
     const { verifySendTx } = await import("./send");
     const exp = { to, lovelace: prepared.preview.lovelace, assets: prepared.preview.assets, changeAddress: me };
     expect(() => verifySendTx(prepared.unsignedTx, prepared.utxos, PARAMS, exp)).not.toThrow();
@@ -208,7 +208,7 @@ describe("AI-23: gửi nâng cao", () => {
 
   it("verifySendTx chặn đổi thứ tự / thiếu người nhận", async () => {
     utxoAmounts = [[ada(20)]];
-    const utxos = (await providers("preprod", {}).fetcher.fetchAddressUTxOs(me)) as never;
+    const utxos = (await providers("preprod").fetcher.fetchAddressUTxOs(me)) as never;
     const prepared = await prepareSend({ req: { outputs: [{ to, lovelace: 2_000_000n }, { to: to2, lovelace: 3_000_000n }] }, utxos, changeAddress: me, params: PARAMS });
     const { verifySendTx } = await import("./send");
     const ok = { outputs: [{ to, lovelace: 2_000_000n, assets: [] }, { to: to2, lovelace: 3_000_000n, assets: [] }], changeAddress: me };
@@ -271,7 +271,7 @@ describe("AI-23: gửi nâng cao", () => {
 
   it("AC-003: verifySendTx từ chối memo bị đổi hoặc metadata không yêu cầu", async () => {
     utxoAmounts = [[ada(20)]];
-    const utxos = (await providers("preprod", {}).fetcher.fetchAddressUTxOs(me)) as never;
+    const utxos = (await providers("preprod").fetcher.fetchAddressUTxOs(me)) as never;
     const prepared = await prepareSend({ req: { to, lovelace: 2_000_000n, memo: "a" }, utxos, changeAddress: me, params: PARAMS });
     const { verifySendTx } = await import("./send");
     const base = { outputs: [{ to, lovelace: 2_000_000n, assets: [] }], changeAddress: me };

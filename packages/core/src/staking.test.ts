@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { bech32 } from "bech32";
 import { DEFAULT_PROTOCOL_PARAMETERS } from "@meshsdk/common";
 import { Serialization, resolveTxHash, Ed25519PublicKey, Ed25519Signature } from "@meshsdk/core-cst";
-import { WalletManager, MemoryStore, verifyStakeTx, prepareStake, KoiosClient, BlockfrostClient, isPoolId, type ProviderFactory, type StakeAccount } from "./index";
+import { WalletManager, MemoryStore, verifyStakeTx, prepareStake, KoiosClient, isPoolId, type ProviderFactory, type StakeAccount } from "./index";
 
 const PW = "correct-horse";
 const M = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -111,11 +111,5 @@ describe("AI-28 AC-003: dữ liệu pool", () => {
     expect(urls.some((u) => u.includes("ticker=ilike.*one*"))).toBe(true);
     expect(await k.searchPools("a&b=c")).toEqual([]);
     expect(isPoolId(P1)).toBe(true);
-  });
-  it("Blockfrost: 404 = chưa đăng ký; saturation đổi sang %", async () => {
-    const f = (async (u: string) => (u.includes("/accounts/") ? j({}, 404) : u.endsWith("/metadata") ? j({ ticker: "TWO", name: "Two" }) : j({ pool_id: P2, margin_cost: 0.05, fixed_cost: "170000000", declared_pledge: "5", live_stake: "7", live_saturation: 0.25, retirement: [] }))) as never;
-    const b = new BlockfrostClient("https://p/api/v0", async () => ({}) as never, f);
-    expect(await b.getStakeAccount("stake_test1x")).toEqual({ registered: false, poolId: undefined, rewards: 0n });
-    expect((await b.searchPools(P2))[0]).toMatchObject({ ticker: "TWO", saturation: 25, margin: 0.05, retiring: false });
   });
 });

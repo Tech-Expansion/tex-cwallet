@@ -48,7 +48,7 @@ describe("WalletApi", () => {
       listAddressTxs: async (_a: string, page: number) => (page === 1 ? [3, 2, 1].map((n) => ({ hash: h(n), blockTime: 1_700_000_000 + n, blockHeight: n })) : []),
       getTxs: async (hs: string[]) => hs.map((x) => raw(parseInt(x, 16))),
     });
-    (api.manager as any).p = () => ({ ...providers("preprod", {}), chain });
+    (api.manager as any).p = () => ({ ...providers("preprod"), chain });
     const page: any = await api.handle({ type: "historyPage", page: 1, count: 10 });
     expect(page.hasMore).toBe(false);
     expect(page.items[0]).toMatchObject({ hash: h(3), direction: "in", netLovelace: "2000000", feePaid: "0", memo: "hi", tokens: [{ quantity: "18446744073709551615" }] });
@@ -84,7 +84,7 @@ describe("WalletApi", () => {
       getBalance: async () => [{ unit: P + "01", quantity: "1" }, { unit: P + "02", quantity: "1" }],
       getNftMetadata: async () => ({ [P + "01"]: { cip25: { name: "A", image: `ipfs://${CID}` } }, [P + "02"]: { cip25: { name: "B", image: "https://evil.example/x.png" } } }),
     });
-    (api.manager as any).p = () => ({ ...providers("preprod", {}), chain });
+    (api.manager as any).p = () => ({ ...providers("preprod"), chain });
     const st: any = await api.handle({ type: "state" });
     expect(st.ipfsGateway).toBe("https://ipfs.io");
     expect(st.ipfsGateways).toContain("https://dweb.link");
@@ -212,7 +212,7 @@ describe("WalletApi", () => {
     const P1 = bech32.encode("pool", bech32.toWords(Buffer.alloc(28, 1)));
     const chain = (api.manager as any).p().chain;
     Object.assign(chain, { getStakeAccount: async () => ({ registered: false, rewards: 0n }), searchPools: async () => [{ poolId: P1, ticker: "ONE", margin: 0.01, fixedCost: 340000000n, pledge: 1n, liveStake: 2n }] });
-    (api.manager as any).p = () => ({ ...providers("preprod", {}), chain });
+    (api.manager as any).p = () => ({ ...providers("preprod"), chain });
     expect(await api.handle({ type: "stakeInfo" })).toMatchObject({ registered: false, rewards: "0" });
     expect(((await api.handle({ type: "searchPools", query: "one" })) as any[])[0]).toMatchObject({ ticker: "ONE", fixedCost: "340000000" });
     const p: any = await api.handle({ type: "prepareStake", action: "delegate", poolId: P1 });
@@ -259,7 +259,7 @@ describe("WalletApi", () => {
 });
 
 describe("WalletApi – chỉ preprod", () => {
-  it("state chỉ có preprod; mạng khác bị từ chối; proxy Blockfrost preprod tuỳ chọn", async () => {
+  it("state chỉ có preprod; mạng khác bị từ chối; không còn proxy", async () => {
     const store = new MemoryStore();
     const a = new WalletApi(store, makeSession(), providers, () => 1);
     await a.handle({ type: "setup", password: PW });
@@ -272,8 +272,7 @@ describe("WalletApi – chỉ preprod", () => {
     await expect(a.handle({ type: "setNetwork", network: "mainnet" as never })).rejects.toMatchObject({ code: "UNSUPPORTED_NETWORK" });
     await expect(a.handle({ type: "setMainnet", enabled: true } as never)).rejects.toThrow();
     expect(((await a.handle({ type: "account" })) as any).baseAddress.startsWith("addr_test1")).toBe(true);
-    await a.handle({ type: "setProvider", proxyUrl: " https://p.example.com ", proxyForTestnets: true });
-    expect(((await a.handle({ type: "state" })) as any).provider).toEqual({ proxyUrl: "https://p.example.com", proxyForTestnets: true });
+    await expect(a.handle({ type: "setProvider", proxyUrl: "https://p.example.com" } as never)).rejects.toMatchObject({ code: "NOT_FOUND" }); // no proxy setting (AI-51)
   });
 });
 

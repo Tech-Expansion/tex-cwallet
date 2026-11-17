@@ -1,4 +1,4 @@
-import { summarizeTx, serializeStakePreview, serializePool, inspectSignData, verifyDataSignature, type SignDataView, serializeBalance, serializeTxDetail, resolveImage, IPFS_GATEWAYS, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory, type ProviderSettings } from "@wallet/core";
+import { summarizeTx, serializeStakePreview, serializePool, inspectSignData, verifyDataSignature, type SignDataView, serializeBalance, serializeTxDetail, resolveImage, IPFS_GATEWAYS, serializeSendPreview, cosignerKeyHash, WalletManager, WalletError, NETWORKS, type NetworkName, type KeyValueStore, type ProviderFactory } from "@wallet/core";
 
 /** Lưu trữ tạm trong phiên trình duyệt (chrome.storage.session) để sống sót khi service worker bị tắt. */
 export interface SessionStore {
@@ -42,7 +42,6 @@ export type Req =
   | { type: "addAccount"; walletId: string }
   | { type: "setActive"; walletId: string; account: number }
   | { type: "setNetwork"; network: NetworkName }
-  | { type: "setProvider"; proxyUrl?: string; proxyForTestnets?: boolean }
   | { type: "account" }
   | { type: "balance" }
   | { type: "walletBalance" }
@@ -105,9 +104,8 @@ export class WalletApi {
     private session: SessionStore,
     providers?: ProviderFactory,
     private now: () => number = Date.now,
-    defaults: ProviderSettings = {},
   ) {
-    this.manager = new WalletManager(store, providers, defaults);
+    this.manager = new WalletManager(store, providers);
   }
 
   /** Mở khóa lại từ phiên nếu service worker vừa thức dậy; tự khóa khi hết hạn. */
@@ -143,7 +141,6 @@ export class WalletApi {
           wallets: m.isUnlocked() ? m.listWallets() : [],
           active: m.active,
           network: m.network,
-          provider: m.providerSettings,
           ipfsGateway: m.ipfsGateway,
           ipfsGateways: IPFS_GATEWAYS,
           networks: Object.values(NETWORKS).map((n) => ({
@@ -185,8 +182,6 @@ export class WalletApi {
       case "setNetwork":
         await this.disconnectAll();
         return m.setNetwork(req.network);
-      case "setProvider":
-        return m.setProviderSettings({ ...m.providerSettings, proxyUrl: req.proxyUrl?.trim() || undefined, proxyForTestnets: !!req.proxyForTestnets });
       case "account":
         return m.getAccount();
       case "balance":

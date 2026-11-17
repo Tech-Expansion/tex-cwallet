@@ -26,7 +26,7 @@ CIP-0146 registration, compatible with Eternl shared wallets).
 - [Repository layout](#repository-layout)
 - [Commands](#commands)
 - [Run the extension](#run-the-extension)
-- [Data source and proxy](#data-source-and-proxy)
+- [Data source](#data-source)
 - [Using the wallet](#using-the-wallet)
 - [Testing](#testing)
 - [Conventions](#conventions)
@@ -36,7 +36,6 @@ CIP-0146 registration, compatible with Eternl shared wallets).
 
 - Node.js 22 (the e2e scripts use `node --experimental-strip-types`, available from Node 22.6) and npm 10+
 - Chrome or Chromium, to load the extension and to run the e2e tests
-- Optional: a Blockfrost **preprod** project id, only if you run the proxy
 
 ## Quick start
 
@@ -58,7 +57,6 @@ npm workspaces, TypeScript.
 | --- | --- |
 | `packages/core` (`@wallet/core`) | Wallet logic, no UI: keys and mnemonics, balances, building and checking transactions, multisig, chain data clients |
 | `packages/extension` (`@wallet/extension`) | Chrome MV3 extension (popup, background service worker, CIP-30 provider) |
-| `packages/proxy` (`@wallet/proxy`) | Small server that keeps the Blockfrost key off the client, with cache and rate limit. See [its README](packages/proxy/README.md) |
 | `scripts/check-preprod.mjs` | Lint that blocks mainnet URLs, addresses and keys, and secret-looking strings in tracked files |
 | `docs/adr/` | Architecture decisions. [ADR 0001](docs/adr/0001-cardano-library-and-chain-data-source.md): Mesh SDK and the chain data interface |
 
@@ -69,7 +67,7 @@ Main modules in `packages/core/src`:
 | `networks.ts` | The preprod network config and `assertNetwork()` |
 | `mnemonic.ts`, `wallet.ts` | 24-word BIP-39 mnemonics, CIP-1852 account derivation |
 | `vault.ts`, `storage.ts` | Mnemonic encryption (PBKDF2 + AES-GCM) and the storage interface |
-| `chain.ts`, `koios.ts`, `blockfrost.ts`, `koiosProvider.ts` | `ChainClient` interface and its Koios / Blockfrost implementations |
+| `chain.ts`, `koios.ts`, `koiosProvider.ts` | `ChainClient` interface and its Koios implementation |
 | `balance.ts` | Balances as bigint, ADA formatting, asset names |
 | `send.ts` | Build an unsigned payment, check it (balance, min-UTxO, recipient) before signing |
 | `shared.ts`, `registration.ts` | Multisig: CIP-1854 keys, native scripts, partial signing, CIP-0146 registration |
@@ -83,12 +81,11 @@ Run from the repo root.
 | --- | --- |
 | `npm run check` | `lint` then `test`. Run this before every push |
 | `npm run lint` | Typecheck all packages + `scripts/check-preprod.mjs` |
-| `npm test` | Unit tests (vitest) for core, extension and proxy. No network needed |
+| `npm test` | Unit tests (vitest) for core and extension. No network needed |
 | `npm run typecheck` | `tsc` for each package |
 | `npm run build` | Build the extension into `packages/extension/dist` |
 | `npm run dev -w @wallet/extension` | Rebuild the extension on change |
 | `npm run e2e` | End-to-end test of the built extension in Chromium (see [Testing](#testing)) |
-| `npm run proxy` | Start the Blockfrost proxy |
 | `npm run flow:setup` / `flow:run` / `flow:status` | Real 2-of-2 multisig run on preprod (see [Testing](#testing)) |
 
 Run one test file: `npm test -w @wallet/core -- send` (any part of the file name).
@@ -109,31 +106,11 @@ and only lives in memory while the wallet is unlocked.
 dApps reach the wallet through CIP-30 as `window.cardano.walletcardano` (shown as "TEX Wallet"). Every `signTx` and `signData` call
 opens an approval window that shows what will be signed.
 
-## Data source and proxy
+## Data source
 
-By default the wallet reads the chain from **public Koios preprod** (`https://preprod.koios.rest/api/v1`), with
-no API key.
-
-Optionally it can use **Blockfrost preprod** through `packages/proxy`, so the Blockfrost key never reaches the
-browser:
-
-```sh
-BLOCKFROST_PREPROD=<your preprod project id> ADMIN_TOKEN=<any secret> npm run proxy
-```
-
-| Variable | Meaning |
-| --- | --- |
-| `BLOCKFROST_PREPROD` | Blockfrost preprod project id. Without it only the Koios route works |
-| `CARDANO_NETWORK` | Optional. Anything other than `preprod` stops the proxy at startup |
-| `PORT`, `HOST` | Listen address, default `127.0.0.1:8787` |
-| `ADMIN_TOKEN` | Turns on `GET /_stats` |
-| `ALLOW_ORIGIN`, `TRUST_PROXY`, `PER_MINUTE` | CORS origin, trust `X-Forwarded-For`, requests per minute per IP |
-
-Keep real values in `packages/proxy/.env` (ignored by git) or in your process manager, never in the repo.
-Then in the extension: **Cài đặt → Nâng cao → Proxy dữ liệu (Blockfrost)**, enter the proxy URL and tick
-"Dùng Blockfrost qua proxy thay cho Koios".
-
-More detail (routes, cache, stats): [packages/proxy/README.md](packages/proxy/README.md).
+The wallet reads the chain from **public Koios preprod** (`https://preprod.koios.rest/api/v1`), with no API key
+and no server of ours in between. Koios has no SLA: when it is down, balances and sending are unavailable until it
+is back.
 
 ## Using the wallet
 
@@ -196,8 +173,7 @@ the wallet and a balanced value. The wallet signs with the payment key and the s
 **Nhập ví → Chỉ xem** accepts a preprod address or an account public key (`acct_xvk…`, `xpub…` or 128 hex, as
 exported by Eternl/Yoroi/cardano-address). Private keys (`acct_xsk…`, `xprv…`, longer hex) are refused and never
 echoed back. With an account key the wallet derives base addresses `m/1852'/1815'/a'/{0,1}/i` with the account's
-stake key, finds the used ones from the stake address (Koios `account_addresses` / Blockfrost
-`/accounts/{stake}/addresses`) and scans each role until 20 unused addresses in a row. Balance and history merge
+stake key, finds the used ones from the stake address (Koios `account_addresses`) and scans each role until 20 unused addresses in a row. Balance and history merge
 all of them (change to internal addresses counts as yours); **Nhận** shows the first unused external address.
 Watch-only wallets cannot send or sign, and dApps cannot connect to them.
 
@@ -256,8 +232,7 @@ token_changes, memo`. Amounts are exact (ADA with 6 decimals, token quantities a
 file is UTF-8 with a BOM so spreadsheets read Vietnamese text, and messages that start with `=`, `+`, `-` or `@`
 get a leading `'` so a spreadsheet does not run them as formulas. An export is limited to 2,000 transactions.
 
-Koios and Blockfrost give the same result. Koios needs one request per page; Blockfrost needs 2 per transaction
-in the list and 3 per transaction for details and CSV (it has no batch endpoint).
+Koios needs one request per page of history.
 
 ### Multisig (m-of-n)
 
@@ -311,8 +286,8 @@ CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm r
 ```
 
 `CHROME_PATH` must point to a Chrome or Chromium binary (the default path only exists on the Linux CI image).
-The test loads the built extension, walks through onboarding, send validation, settings and multisig, and
-checks the Blockfrost route against a fake upstream behind the real proxy.
+The test loads the built extension, walks through onboarding, send validation, settings, multisig discovery against
+real Koios preprod, and the CIP-30 dApp connection.
 
 ### Real multisig run on preprod
 
@@ -342,7 +317,7 @@ The team rules live in the `tex-vault` and `ai-workflow-kit` repositories; in sh
 | `npm install` fails with `ETIMEDOUT` / `errno -60` | Network to the registry is flaky. Retry with `NODE_OPTIONS=--dns-result-order=ipv4first npm install --maxsockets=4 --fetch-retries=5 --fetch-timeout=600000` |
 | `tsc: command not found` | `npm install` did not finish; fix the install first |
 | The wallet refuses to start with `UNSUPPORTED_NETWORK` | State saved by an old multi-network build (preview/mainnet). Remove the extension data (or reinstall the extension) and restore your wallet from its mnemonic |
-| "Không lấy được protocol parameters…" | The data source is unreachable; check your connection or the proxy |
+| "Không lấy được protocol parameters…" | The data source is unreachable; check your connection; public Koios may be down, retry later |
 | e2e cannot launch the browser | Set `CHROME_PATH` to your Chrome/Chromium binary |
 
 ## License

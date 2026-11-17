@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
-const { createProxy } = await import("../../proxy/src/proxy.ts");
 
 const ext = resolve(dirname(fileURLToPath(import.meta.url)), "../dist");
 const PW = "e2e-password-1";
@@ -15,19 +14,6 @@ const log = (m) => console.log("•", m);
 const srv = createServer((_, res) => { res.setHeader("content-type", "text/html"); res.end("<html><body>dapp</body></html>"); });
 await new Promise((r) => srv.listen(0, "127.0.0.1", r));
 const dappUrl = `http://127.0.0.1:${srv.address().port}/`;
-
-// Fake Blockfrost preprod upstream + the real proxy (packages/proxy) to test the Blockfrost path end to end.
-const upstream = createServer((req, res) => {
-  res.setHeader("content-type", "application/json");
-  if (/\/addresses\/[^/]+$/.test(req.url)) return res.end(JSON.stringify({ amount: [{ unit: "lovelace", quantity: "12000000" }] }));
-  if (/\/addresses\/[^/]+\/transactions/.test(req.url)) return res.end("[]");
-  res.statusCode = 404; res.end("{}");
-});
-await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
-const proxy = createProxy({ keys: { preprod: "TEST_KEY" }, upstream: { preprod: `http://127.0.0.1:${upstream.address().port}/api/v0` }, adminToken: "adm" });
-const proxySrv = createServer((req, res) => void proxy.handle(req, res));
-await new Promise((r) => proxySrv.listen(0, "127.0.0.1", r));
-const proxyUrl = `http://127.0.0.1:${proxySrv.address().port}`;
 
 const ctx = await chromium.launchPersistentContext(mkdtempSync(resolve(tmpdir(), "w-")), {
   headless: false,
@@ -168,22 +154,6 @@ try {
   await popup.getByRole("tab", { name: "Tối" }).click();
   log("điều hướng, đổi mạng/giao diện/ngôn ngữ OK");
 
-  // Blockfrost preprod through the real proxy (optional instead of Koios)
-  await popup.getByRole("button", { name: "Tab Cài đặt" }).click();
-  await popup.getByLabel("Proxy dữ liệu (Blockfrost)").fill(proxyUrl);
-  await popup.getByText("Dùng Blockfrost qua proxy thay cho Koios").click();
-  await popup.getByRole("button", { name: "Lưu proxy" }).click();
-  await popup.getByRole("button", { name: "Tab Ví" }).click();
-  await popup.getByRole("button", { name: "Làm mới" }).click();
-  await popup.waitForFunction(() => document.querySelector("[data-testid=balance]")?.textContent === "12", null, { timeout: 15000 });
-  assert.equal(proxy.stats.upstream.preprod >= 1, true);
-  await shot(popup, "10-blockfrost-preprod");
-  log(`Blockfrost preprod qua proxy OK (upstream=${proxy.stats.upstream.preprod}, client=${proxy.stats.clientRequests})`);
-  await popup.getByRole("button", { name: "Tab Cài đặt" }).click();
-  await popup.getByLabel("Proxy dữ liệu (Blockfrost)").fill("");
-  await popup.getByText("Dùng Blockfrost qua proxy thay cho Koios").click();
-  await popup.getByRole("button", { name: "Lưu proxy" }).click();
-
   // Khóa & mở khóa sai/đúng
   await popup.getByRole("button", { name: "Khóa ví" }).click();
   await popup.getByRole("heading", { name: "Mở khóa ví" }).waitFor();
@@ -226,6 +196,4 @@ try {
 } finally {
   await ctx.close();
   srv.close();
-  proxySrv.close();
-  upstream.close();
 }

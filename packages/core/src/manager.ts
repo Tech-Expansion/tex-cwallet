@@ -7,7 +7,7 @@ import { encrypt, decrypt, type EncryptedBlob } from "./vault";
 import { generateMnemonic, normalizeMnemonic, checkMnemonic, describeMnemonicProblem } from "./mnemonic";
 import { deriveAccount, type DerivedAccount } from "./wallet";
 import type { AssetBalance, TxSummary } from "./koios";
-import { defaultProviders, type ProviderFactory, type ProviderSettings } from "./chain";
+import { defaultProviders, type ProviderFactory } from "./chain";
 import type { KeyValueStore } from "./storage";
 import { WalletError } from "./errors";
 import {
@@ -45,7 +45,6 @@ interface State {
   /** Multisig wallet ids a wallet removed on purpose: not adopted again from other local wallets */
   sharedHidden?: Record<string, string[]>;
   requests?: Record<string, SignRequest[]>;
-  providerSettings?: ProviderSettings;
   /** Collateral UTxO per `${walletId}:${account}` (AI-25) */
   collateral?: Record<string, { txHash: string; outputIndex: number }>;
   /** false = collateral may be spent by normal sends (default: protected) */
@@ -105,8 +104,6 @@ export class WalletManager {
   constructor(
     private store: KeyValueStore,
     private providers: ProviderFactory = defaultProviders,
-    /** Cấu hình nguồn dữ liệu mặc định (ví dụ URL proxy của bản triển khai) khi người dùng chưa tự đặt */
-    private defaults: ProviderSettings = {},
   ) {}
 
   // ---------- trạng thái ----------
@@ -310,17 +307,8 @@ export class WalletManager {
     }
     await this.save();
   }
-  get providerSettings(): ProviderSettings {
-    return { koiosViaProxy: this.defaults.koiosViaProxy, ...(this.state.providerSettings ?? this.defaults) };
-  }
-  async setProviderSettings(s: ProviderSettings) {
-    this.requireUnlocked();
-    if (s.proxyUrl && !/^https?:\/\/[^\s/]+/.test(s.proxyUrl)) throw new WalletError("NOT_FOUND", "URL proxy không hợp lệ");
-    this.state.providerSettings = s;
-    await this.save();
-  }
   private p() {
-    return this.providers(this.state.network, this.providerSettings);
+    return this.providers(this.state.network);
   }
 
   async exportMnemonic(walletId: string, password: string): Promise<string[]> {
