@@ -139,7 +139,6 @@ export function Approve({ id }: { id: string }) {
   );
 }
 
-/** Optional Blockfrost preprod data proxy. */
 type CollateralRpc = { state: "none" | "pending" | "ready"; txHash?: string; lovelace?: string; protected: boolean };
 
 /** Collateral for dApps (AI-25): a 5 ADA UTxO to ourselves, kept out of normal sends while protected. */
@@ -186,29 +185,9 @@ function Collateral({ st }: { st: AppState }) {
 
 function Advanced({ st, refresh }: { st: AppState; refresh: () => void }) {
   const t = useT();
-  const [url, setUrl] = useState(st.provider.proxyUrl ?? "");
-  const [forTest, setForTest] = useState(!!st.provider.proxyForTestnets);
-  const save = useAction(async () => {
-    const u = url.trim();
-    // Extension chỉ gọi được host đã được cấp quyền: xin quyền cho đúng origin của proxy.
-    if (u && typeof chrome !== "undefined" && chrome.permissions) {
-      const origin = new URL(u).origin + "/*";
-      const ok = (await chrome.permissions.contains({ origins: [origin] })) || (await chrome.permissions.request({ origins: [origin] }));
-      if (!ok) throw new Error(t("settings.proxyDenied"));
-    }
-    await rpc({ type: "setProvider", proxyUrl: u, proxyForTestnets: forTest });
-    showToast(t("settings.saved"));
-    refresh();
-  });
   return (
     <Card className="space-y-3 p-3">
       <SectionLabel className="mb-0">{t("settings.advanced")}</SectionLabel>
-      <Field label={t("settings.proxy")} hint={t("settings.proxyHint")}>
-        <input className="field font-mono" aria-label={t("settings.proxy")} placeholder="https://" value={url} onChange={(e) => setUrl(e.target.value)} />
-      </Field>
-      <Checkbox checked={forTest} onChange={setForTest}>{t("settings.proxyTestnet")}</Checkbox>
-      <ErrorText error={save.error} />
-      <Button block loading={save.busy} onClick={() => void save.run()}>{t("settings.proxySave")}</Button>
       {st.ipfsGateways && (
         <Field label={t("settings.ipfsGateway")} hint={t("settings.ipfsGatewayHint")}>
           <select className="field" value={st.ipfsGateway} data-testid="ipfs-gateway"

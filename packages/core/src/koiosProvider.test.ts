@@ -40,20 +40,6 @@ describe("KoiosFetcher (thay cho KoiosProvider của Mesh bị trả 0 UTxO)", (
   });
 });
 
-describe("chọn nguồn dữ liệu cho testnet", () => {
-  it("mặc định gọi Koios trực tiếp; bản web đi qua proxy /koios/<mạng>/api/v1", async () => {
-    const calls: string[] = [];
-    const f = (async (url: string) => { calls.push(url); return json([]); }) as never;
-    const direct = defaultProviders("preprod", {});
-    expect(direct.chain).toBeInstanceOf(KoiosClient);
-    const web = defaultProviders("preprod", { proxyUrl: "https://w.example.com/proxy/", koiosViaProxy: true });
-    const c = new KoiosClient("preprod", f, "https://w.example.com/proxy/koios/preprod/api/v1");
-    await c.getHistory("addr_test1x");
-    expect(calls[0]).toBe("https://w.example.com/proxy/koios/preprod/api/v1/address_txs");
-    expect(web.chain).toBeInstanceOf(KoiosClient);
-  });
-});
-
 describe("lịch sử gần đây trên dashboard (Koios)", () => {
   it("xin cả inputs trong tx_info: giao dịch gửi đi hiện số âm, không còn hiện cả tiền thối là tiền nhận", async () => {
     const ME = "addr_test1me";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analyzeTx, historyCsv, historyPage, historyRange, readMemo, BlockfrostClient, KoiosClient, type HistorySource, type RawTx, type TxRef } from "./index";
+import { analyzeTx, historyCsv, historyPage, historyRange, readMemo, KoiosClient, type HistorySource, type RawTx, type TxRef } from "./index";
 
 const ME = "addr_test1qme";
 const OTHER = "addr_test1qother";
@@ -96,10 +96,9 @@ describe("AI-21: phân trang + khoảng thời gian", () => {
 
 const j = (b: unknown, status = 200) => ({ ok: status < 400, status, json: async () => b }) as Response;
 
-describe("AI-21 AC-003: Koios và Blockfrost cho cùng kết quả", () => {
+describe("AI-21 AC-003: lịch sử qua Koios", () => {
   const raw = { fee: "170000", inputs: [io(ME, "5000000", [{ unit: POLICY + "01", quantity: "4" }])], outputs: [io(OTHER, "2000000", [{ unit: POLICY + "01", quantity: "1" }]), io(ME, "2830000", [{ unit: POLICY + "01", quantity: "3" }])] };
   const kio = (x: ReturnType<typeof io>) => ({ payment_addr: { bech32: x.address }, value: x.lovelace, asset_list: x.assets.map((a) => ({ policy_id: a.unit.slice(0, 56), asset_name: a.unit.slice(56), quantity: a.quantity })) });
-  const bio = (x: ReturnType<typeof io>) => ({ address: x.address, amount: [{ unit: "lovelace", quantity: x.lovelace }, ...x.assets] });
 
   it("Koios: address_txs có phân trang, tx_info xin inputs/metadata/assets", async () => {
     const seen: { url: string; body: any }[] = [];
@@ -114,22 +113,4 @@ describe("AI-21 AC-003: Koios và Blockfrost cho cùng kết quả", () => {
     expect(p.items[0]).toMatchObject({ direction: "out", netLovelace: -2_170_000n, feePaid: 170_000n, memo: "hi", tokens: [{ unit: POLICY + "01", quantity: -1n }] });
   });
 
-  it("Blockfrost: danh sách có page, 2 request/tx, thêm metadata khi cần, bỏ collateral", async () => {
-    const calls: string[] = [];
-    const f = (async (url: string) => {
-      const u = url.replace("https://p/api/v0", "");
-      calls.push(u);
-      if (u.startsWith(`/addresses/${ME}/transactions`)) return j([{ tx_hash: H(9), block_time: 1000, block_height: 7 }]);
-      if (u === `/txs/${H(9)}`) return j({ hash: H(9), block_time: 1000, block_height: 7, fees: raw.fee });
-      if (u === `/txs/${H(9)}/utxos`) return j({ inputs: [...raw.inputs.map(bio), { ...bio(io(ME, "9000000")), collateral: true }], outputs: raw.outputs.map(bio) });
-      if (u === `/txs/${H(9)}/metadata`) return j([{ label: "674", json_metadata: { msg: ["hi"] } }]);
-      return j({}, 500);
-    }) as never;
-    const c = new BlockfrostClient("https://p/api/v0", async () => ({}) as never, f);
-    const p = await historyPage(c, ME, 3, 20);
-    expect(calls).toEqual([`/addresses/${ME}/transactions?order=desc&count=20&page=3`, `/txs/${H(9)}`, `/txs/${H(9)}/utxos`]);
-    expect(p.items[0]).toMatchObject({ direction: "out", netLovelace: -2_170_000n, memo: undefined, metadata: undefined, tokens: [{ unit: POLICY + "01", quantity: -1n }] });
-    const [full] = await c.getTxs([H(9)], true);
-    expect(full!.metadata).toEqual({ "674": { msg: ["hi"] } });
-  });
 });

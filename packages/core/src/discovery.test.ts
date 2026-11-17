@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { KoiosClient } from "./koios";
-import { BlockfrostClient } from "./blockfrost";
 import { sharedKeyHash, buildPaymentScript, makeSharedWallet } from "./shared";
 import { buildRegistrationTx } from "./registration";
 
@@ -38,25 +37,4 @@ describe("khám phá ví multisig (CIP-0146)", () => {
     expect(await new KoiosClient("preprod", f).findRegistrations(["ff".repeat(28)])).toEqual([]);
   });
 
-  it("Blockfrost: lọc theo participants, tải CBOR chỉ cho giao dịch khớp, xác minh khóa nằm trong script thật", async () => {
-    const { kh, w1, tx1 } = await fixtures();
-    const calls: string[] = [];
-    const f = (async (url: string) => {
-      calls.push(url.replace("https://p/api/v0", ""));
-      if (url.includes("/metadata/txs/labels/1854")) {
-        return json([
-          { tx_hash: "other", json_metadata: { participants: { [`${"11".repeat(28)}`]: { name: "x" } } } },
-          { tx_hash: "liar", json_metadata: { participants: { [kh[0]!]: { name: "tự nhận" } } } }, // nói dối: script không chứa khóa
-          { tx_hash: "good", json_metadata: { participants: { [kh[0]!]: { name: "S0" } } } },
-        ]);
-      }
-      if (url.endsWith("/txs/good/cbor")) return json({ cbor: tx1 });
-      if (url.endsWith("/txs/liar/cbor")) return json({ cbor: "84a0f5f6" });
-      return json({}, 404);
-    }) as never;
-    const found = await new BlockfrostClient("https://p/api/v0", async () => ({}) as never, f).findRegistrations([kh[0]!]);
-    expect(found.map((r) => r.txHash)).toEqual(["good"]);
-    expect(calls.some((c) => c.includes("/txs/other/cbor"))).toBe(false); // không tải CBOR của giao dịch không liên quan
-    expect(found[0]!.payment).toEqual(w1.paymentScript);
-  });
 });

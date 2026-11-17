@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { WalletManager, MemoryStore, parseHandle, handleUnits, resolveHandle, HANDLE_POLICIES, CIP68_USER_LABEL, KoiosClient, BlockfrostClient, type ProviderFactory } from "./index";
+import { WalletManager, MemoryStore, parseHandle, handleUnits, resolveHandle, HANDLE_POLICIES, CIP68_USER_LABEL, KoiosClient, type ProviderFactory } from "./index";
 import { Address } from "@meshsdk/core-cst";
 
 const M = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -81,15 +81,11 @@ describe("AI-22: ADA Handle", () => {
     await expect(m.resolveHandle("$mn")).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
     await expect(m.resolveHandle("alice")).rejects.toMatchObject({ code: "INVALID_HANDLE" });
   });
-  it("Koios và Blockfrost: gọi đúng endpoint, bỏ số lượng 0, 404 = không có", async () => {
+  it("Koios: gọi đúng endpoint, bỏ số lượng 0, 404 = không có", async () => {
     const j = (b: unknown, status = 200) => ({ ok: status < 400, status, json: async () => b }) as Response;
     const urls: string[] = [];
     const k = new KoiosClient("preprod", (async (u: string) => (urls.push(u), j([{ payment_address: A1, quantity: "1" }, { payment_address: A2, quantity: "0" }]))) as never, "https://k/api/v1");
     expect(await k.assetAddresses(P + "6162")).toEqual([A1]);
     expect(urls[0]).toBe(`https://k/api/v1/asset_addresses?_asset_policy=${P}&_asset_name=6162`);
-    const b = new BlockfrostClient("https://p/api/v0", async () => ({}) as never, (async (u: string) => (u.includes("6162") ? j([{ address: A2, quantity: "1" }]) : j({}, 404))) as never);
-    expect(await b.assetAddresses(P + "6162")).toEqual([A2]);
-    expect(await resolveHandle(b, "$ab", "preprod")).toMatchObject({ address: A2 });
-    await expect(resolveHandle(b, "$zz", "preprod")).rejects.toMatchObject({ code: "HANDLE_NOT_FOUND" });
   });
 });

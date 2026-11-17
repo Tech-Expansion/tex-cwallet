@@ -22,8 +22,7 @@ const sessionStore: SessionStore = {
 };
 void MemoryStore;
 
-const PROXY = (import.meta.env.VITE_PROXY_URL as string | undefined) || undefined;
-const api = new WalletApi(chromeStore, sessionStore, undefined, undefined, { proxyUrl: PROXY });
+const api = new WalletApi(chromeStore, sessionStore);
 
 api.onApprovalNeeded = (a: Approval) => {
   chrome.windows.create({ url: chrome.runtime.getURL(`popup.html#/approve/${a.id}`), type: "popup", width: 380, height: 640 });

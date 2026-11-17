@@ -16,8 +16,6 @@ export interface NetworkConfig {
   unit: "tADA";
   /** Default data source: public Koios, no API key */
   defaultProvider: { kind: "koios"; url: string };
-  /** Tên mạng trong đường dẫn của proxy / Blockfrost */
-  proxyPath: "preprod";
   explorerTxUrl: string;
   faucetUrl: string;
 }
@@ -29,7 +27,6 @@ export const PREPROD: NetworkConfig = Object.freeze({
   addressPrefix: "addr_test1",
   unit: "tADA",
   defaultProvider: Object.freeze({ kind: "koios", url: "https://preprod.koios.rest/api/v1" }),
-  proxyPath: "preprod",
   explorerTxUrl: "https://preprod.cardanoscan.io/transaction/",
   faucetUrl: "https://docs.cardano.org/cardano-testnets/tools/faucet",
 }) as NetworkConfig;

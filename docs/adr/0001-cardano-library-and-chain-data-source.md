@@ -19,11 +19,13 @@ Use **Mesh SDK** (`@meshsdk/core`, `@meshsdk/core-cst`, `@meshsdk/common`) for k
 and transaction building/signing, and `bip39` for mnemonics.
 
 Chain data sits behind the `ChainClient` interface (`packages/core/src/chain.ts`): `getTip`, `getBalance`,
-`getHistory`, `getProtocolParams`, `findRegistrations`, `txExists`. Two implementations:
+`getHistory`, `getProtocolParams`, `findRegistrations`, `txExists`. Implementation: `KoiosClient`, public Koios
+preprod, no API key.
 
-- `KoiosClient`: public Koios preprod, the default, no API key.
-- `BlockfrostClient`: Blockfrost preprod through `packages/proxy`. The API key lives in the proxy and is read from
-  the `BLOCKFROST_PREPROD` environment variable; it is never in the repo or the extension.
+> **Update 2026-11-18 (AI-51):** the second implementation, `BlockfrostClient` behind our own proxy
+> (`packages/proxy`), was removed together with the proxy and its setting. The release is a Chrome extension only,
+> with nothing hosted by TexLabs, so Koios is the only data source. Bring it back from git history if Koios
+> availability becomes a problem.
 
 Tests use fakes of `ChainClient` / `fetch` and make no network calls.
 

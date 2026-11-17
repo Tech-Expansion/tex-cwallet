@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseNft, resolveImage, datumToJson, cip68FromDatum, cip25Entry, splitUnit, nftUnits, loadNfts, NftCache, MemoryStore, KoiosClient, BlockfrostClient,
+  parseNft, resolveImage, datumToJson, cip68FromDatum, cip25Entry, splitUnit, nftUnits, loadNfts, NftCache, MemoryStore, KoiosClient,
   WalletManager, IPFS_GATEWAYS, IMAGE_HOSTS, CIP68_NFT_LABEL, CIP68_REF_LABEL, NFT_CACHE_TTL_MS, type NftMetadataSource, type ProviderFactory,
 } from "./index";
 
@@ -88,11 +88,6 @@ describe("AI-24 AC-001: nguồn dữ liệu + cache", () => {
     const r = await new KoiosClient("preprod", f, "https://k/api/v1").getNftMetadata([old, user]);
     expect(body._asset_list).toEqual([[P, hex("Bunny1")], [P, CIP68_NFT_LABEL + hex("d")], [P, ref.slice(56)]]);
     expect(r).toEqual({ [old]: { cip25: { name: "B" } }, [user]: { cip68: { name: "D" } } });
-  });
-  it("Blockfrost /assets/{unit}: onchain_metadata theo chuẩn", async () => {
-    const f = (async (u: string) => (u.endsWith("01") ? j({ onchain_metadata: { name: "A" }, onchain_metadata_standard: "CIP25v1" }) : u.endsWith("02") ? j({ onchain_metadata: { name: "B" }, onchain_metadata_standard: "CIP68v1" }) : j({}, 404))) as never;
-    const r = await new BlockfrostClient("https://p/api/v0", async () => ({}) as never, f).getNftMetadata([P + "01", P + "02", P + "03"]);
-    expect(r).toEqual({ [P + "01"]: { cip25: { name: "A" } }, [P + "02"]: { cip68: { name: "B" } } });
   });
   it("cache: lần 2 không gọi mạng; hết hạn hoặc refresh thì tải lại", async () => {
     let calls = 0;

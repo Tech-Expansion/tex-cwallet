@@ -21,7 +21,6 @@ export interface AppState {
   wallets: WalletMeta[];
   active: { walletId?: string; account: number };
   network: NetName;
-  provider: { proxyUrl?: string; proxyForTestnets?: boolean };
   ipfsGateway?: string;
   ipfsGateways?: string[];
   networks: NetInfo[];
