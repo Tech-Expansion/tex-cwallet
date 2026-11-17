@@ -17,7 +17,8 @@ export class SharedError extends Error {
 export type NativeScriptJson =
   | { type: "sig"; keyHash: string }
   | { type: "all" | "any"; scripts: NativeScriptJson[] }
-  | { type: "atLeast"; required: number; scripts: NativeScriptJson[] };
+  | { type: "atLeast"; required: number; scripts: NativeScriptJson[] }
+  | { type: "before" | "after"; slot: string }; // time-lock: holds no key
 
 export interface Signer { name: string; keyHash: string }
 
@@ -110,9 +111,11 @@ export const scriptHashOf = (s: NativeScriptJson) => resolveNativeScriptHash(s a
 export const scriptCborOf = (s: NativeScriptJson, networkId: 0 | 1 = 0) => serializeNativeScript(s as never, undefined, networkId).scriptCbor!;
 
 export function keysOf(s: NativeScriptJson): string[] {
-  return s.type === "sig" ? [s.keyHash] : s.scripts.flatMap(keysOf);
+  if (s.type === "sig") return [s.keyHash];
+  return "scripts" in s ? s.scripts.flatMap(keysOf) : [];
 }
 export function requiredOf(s: NativeScriptJson): number {
+  if ("slot" in s) return 0; // time-lock
   if (s.type === "atLeast") return s.required;
   if (s.type === "sig" || s.type === "any") return 1;
   return s.scripts.length; // all

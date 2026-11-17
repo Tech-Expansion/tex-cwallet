@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Serialization, resolveTxHash } from "@meshsdk/core-cst";
-import { sharedKeyHash, buildPaymentScript, makeSharedWallet, scriptHashOf } from "./shared";
+import { sharedKeyHash, buildPaymentScript, makeSharedWallet, scriptHashOf, scriptCborOf, scriptFromCbor, keysOf, requiredOf, type NativeScriptJson } from "./shared";
 import { buildRegistrationTx, parseRegistration, registrationMetadata, truncateMetadataString, fromParts, registrationHasKey } from "./registration";
 
 const W = [
@@ -68,6 +68,18 @@ describe("đăng ký CIP-0146", () => {
     expect(fromParts({ types: [0], enc: "basic", name: ["U2FsdGVk"] }, [w.paymentScript])).toBeNull();
   });
 
+  it("AI-55: script có time-lock (before/after) không làm hỏng việc đọc khóa", async () => {
+    const k = await sharedKeyHash("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" "), 0);
+    const locked: NativeScriptJson = { type: "all", scripts: [{ type: "sig", keyHash: k }, { type: "before", slot: "123456" }] };
+    // the same shape as read from chain CBOR
+    const back = scriptFromCbor(scriptCborOf(locked));
+    expect(keysOf(back)).toEqual([k]);
+    expect(keysOf({ type: "after", slot: "1" })).toEqual([]);
+    expect(requiredOf({ type: "before", slot: "1" })).toBe(0);
+    const reg = { metadata: { types: [0] }, scripts: [back], payment: back } as never;
+    expect(registrationHasKey(reg, k)).toBe(true);
+    expect(registrationHasKey(reg, "0".repeat(56))).toBe(false);
+  });
   it("cắt chuỗi metadata ≤ 64 byte, không vỡ UTF-8", () => {
     const s = truncateMetadataString("Quỹ ".repeat(40));
     expect(new TextEncoder().encode(s).length).toBeLessThanOrEqual(64);
