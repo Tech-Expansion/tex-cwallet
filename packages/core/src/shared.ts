@@ -2,7 +2,7 @@
 import * as bip39 from "bip39";
 import { MeshTxBuilder, serializeNativeScript, resolveNativeScriptHash, resolvePaymentKeyHash } from "@meshsdk/core";
 import type { UTxO, Protocol } from "@meshsdk/core";
-import { Bip32PrivateKey, Serialization, resolveTxHash, Ed25519PublicKey, Ed25519Signature, addVKeyWitnessSetToTransaction, deserializeNativeScript, fromNativeScript } from "@meshsdk/core-cst";
+import { Bip32PrivateKey, Cardano, Serialization, resolveTxHash, Ed25519PublicKey, Ed25519Signature, addVKeyWitnessSetToTransaction, deserializeNativeScript, fromNativeScript } from "@meshsdk/core-cst";
 import { NETWORKS, type NetworkName } from "./networks";
 
 const H = 0x80000000;
@@ -119,9 +119,14 @@ export function requiredOf(s: NativeScriptJson): number {
 }
 
 /** Địa chỉ ví: có script stake thì là địa chỉ base (script thanh toán + script stake), ngược lại là địa chỉ enterprise. */
-export function sharedAddress(payment: NativeScriptJson, network: NetworkName, stake?: NativeScriptJson): string {
-  return serializeNativeScript(payment as never, stake ? scriptHashOf(stake) : undefined, NETWORKS[network].networkId).address;
+export function scriptAddress(payment: NativeScriptJson, networkId: 0 | 1, stake?: NativeScriptJson): string {
+  // Mesh serializeNativeScript treats its stake argument as a key hash, so a stake script needs a base address built by hand.
+  if (!stake) return serializeNativeScript(payment as never, undefined, networkId).address;
+  const script = (s: NativeScriptJson) => ({ type: Cardano.CredentialType.ScriptHash, hash: scriptHashOf(s) as never });
+  return Cardano.BaseAddress.fromCredentials(networkId, script(payment), script(stake)).toAddress().toBech32();
 }
+export const sharedAddress = (payment: NativeScriptJson, network: NetworkName, stake?: NativeScriptJson): string =>
+  scriptAddress(payment, NETWORKS[network].networkId, stake);
 
 export function makeSharedWallet(p: { name: string; network: NetworkName; paymentScript: NativeScriptJson; stakeScript?: NativeScriptJson; signers?: Signer[]; myIndex?: number; registeredTx?: string }): SharedWallet {
   const hash = scriptHashOf(p.paymentScript);

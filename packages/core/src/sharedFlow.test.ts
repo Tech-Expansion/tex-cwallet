@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Serialization, resolveTxHash } from "@meshsdk/core-cst";
 import { DEFAULT_PROTOCOL_PARAMETERS } from "@meshsdk/common";
-import { WalletManager, MemoryStore, parseRegistration, signWithSharedKey, attachWitnesses, sharedPublicKey, scriptCborOf, SHARED_TTL_SLOTS, type ProviderFactory, type Registration } from "./index";
+import { WalletManager, MemoryStore, parseRegistration, signWithSharedKey, attachWitnesses, sharedPublicKey, scriptCborOf, sharedAddress, SHARED_TTL_SLOTS, type ProviderFactory, type Registration } from "./index";
 
 const M = [
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
@@ -216,6 +216,25 @@ describe("multisig kiểu Eternl: tạo → đăng ký → khám phá → đề 
     await a2.unlock(PW);
     expect(a2.listShared().map((x) => x.id)).toEqual([w.id]);
     expect((await a2.listRequests(w.id)).length).toBe(1);
+  });
+
+  it("load() derives the address of a stored wallet with a stake script again (AI-44)", async () => {
+    const store = new MemoryStore();
+    const a1 = new WalletManager(store, providers);
+    await a1.setupPassword(PW);
+    await a1.addWallet("U0", M[0]!);
+    const kb = (await B.sharedKeyInfo(0)).keyHash;
+    const w = await a1.createShared({ name: "Stake", required: 1, cosigners: [{ name: "B", keyHash: kb }] });
+    // state as an older build saved it: stake script present, address from the buggy derivation
+    const state = (await store.get<{ shared: Array<typeof w> }>("wallet-state-v1"))!;
+    state.shared[0]!.stakeScript = { type: "atLeast", required: 1, scripts: [{ type: "sig", keyHash: kb }] };
+    state.shared[0]!.address = "addr_test1zpwrong";
+    await store.set("wallet-state-v1", state);
+    const a2 = new WalletManager(store, providers);
+    await a2.load();
+    await a2.unlock(PW);
+    expect(a2.listShared()[0]!.address).toBe(sharedAddress(w.paymentScript, "preprod", state.shared[0]!.stakeScript));
+    expect(a2.listShared()[0]!.address).toMatch(/^addr_test1x/);
   });
 
   it("chỉ số khóa tự điền: ví đầu dùng 0, ví tiếp theo tự dùng 1, 2…", async () => {
