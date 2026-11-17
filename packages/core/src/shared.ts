@@ -4,6 +4,7 @@ import { MeshTxBuilder, serializeNativeScript, resolveNativeScriptHash, resolveP
 import type { UTxO, Protocol } from "@meshsdk/core";
 import { Bip32PrivateKey, Cardano, Serialization, resolveTxHash, Ed25519PublicKey, Ed25519Signature, addVKeyWitnessSetToTransaction, deserializeNativeScript, fromNativeScript } from "@meshsdk/core-cst";
 import { NETWORKS, type NetworkName } from "./networks";
+import { add, assetsOf, memoLines, outputValue, ref, txMemo, valueOf, type Totals } from "./send";
 
 const H = 0x80000000;
 const HEX56 = /^[0-9a-f]{56}$/;
@@ -165,7 +166,8 @@ const lovelaceOf = (u: UTxO) => BigInt(u.output.amount.find((a) => a.unit === "l
 const VKEY_WITNESS_BYTES = 101;
 
 /** Dựng giao dịch chưa ký chi ADA từ ví multisig; chỉ dùng UTxO thuộc địa chỉ script (CIP-1854). */
-export async function buildSharedSend(w: SharedWallet, utxos: UTxO[], to: string, lovelace: bigint, params?: Partial<Protocol>, opts: { invalidHereafter?: number } = {}): Promise<string> {
+export async function buildSharedSend(w: SharedWallet, utxos: UTxO[], to: string, lovelace: bigint, params?: Partial<Protocol>, opts: { invalidHereafter?: number; memo?: string } = {}): Promise<string> {
+  const memo = memoLines(opts.memo);
   const own = utxos.filter((u) => u.output.address === w.address);
   const sorted = [...own].sort((a, b) => (lovelaceOf(b) > lovelaceOf(a) ? 1 : -1));
   const picked: UTxO[] = [];
@@ -185,6 +187,7 @@ export async function buildSharedSend(w: SharedWallet, utxos: UTxO[], to: string
     }
     b.txOut(to, [{ unit: "lovelace", quantity: lovelace.toString() }]).changeAddress(w.address);
     if (opts.invalidHereafter !== undefined) b.invalidHereafter(opts.invalidHereafter); // after this slot it must be proposed again (AI-8)
+    if (memo) b.metadataValue(674, { msg: memo }); // CIP-20, inside the signed body so nobody can change it on the way (AI-45)
     if (fee) b.setFee(fee.toString());
     return b.complete();
   };
@@ -215,10 +218,19 @@ export async function readWitnesses(txCbor: string, witnessSetCbor: string): Pro
   return out;
 }
 
+export interface AssetQty { unit: string; quantity: string }
+
+/** Largest fee a cosigner signs: a fee is lost to the network, and a real multisig fee is far below this. */
+export const MAX_SHARED_FEE = 2_000_000n;
+
 export interface TxPreview {
   txHash: string;
-  outputs: { address: string; lovelace: string; tokens: number; change: boolean }[];
+  outputs: { address: string; lovelace: string; tokens: number; assets: AssetQty[]; change: boolean }[];
   fee: string;
+  /** CIP-20 message carried in the transaction (lines joined by newlines) */
+  memo?: string;
+  /** What leaves the wallet, fee included (inputs minus change). Set only when the inputs were checked against the wallet's UTxOs. */
+  net?: { lovelace: string; assets: AssetQty[] };
   /** Slot from which the transaction is invalid (invalid_hereafter); undefined = no validity end */
   ttl?: number;
   /** Cosigner đã ký (key hash) */
@@ -230,8 +242,10 @@ export interface TxPreview {
  * Kiểm tra giao dịch (có thể đã ký một phần) trước khi hỏi người dùng có ký không, theo CIP-1854:
  * script phải đúng ví này; chữ ký có sẵn phải hợp lệ và thuộc cosigner của ví.
  * `requireOtherSigner`: giao dịch nhận từ người khác phải có chữ ký của ít nhất một cosigner (kiểm tra nguồn gốc).
+ * AI-45: the transaction may only spend: see assertOnlySpend. `utxos`: the wallet's current UTxOs; when given, every
+ * input must be one of them (an input of another wallet, or one already spent, is refused) and `net` is filled.
  */
-export async function inspectSharedTx(w: SharedWallet, txCbor: string, opts: { requireOtherSigner?: boolean; myKeyHashes?: string[] } = {}): Promise<TxPreview> {
+export async function inspectSharedTx(w: SharedWallet, txCbor: string, opts: { requireOtherSigner?: boolean; myKeyHashes?: string[]; utxos?: UTxO[] } = {}): Promise<TxPreview> {
   if (!/^[0-9a-f]+$/i.test(txCbor) || txCbor.length > 65_536) throw new SharedError("INVALID_TX", "Giao dịch không hợp lệ");
   let tx: Serialization.Transaction;
   try {
@@ -239,8 +253,7 @@ export async function inspectSharedTx(w: SharedWallet, txCbor: string, opts: { r
   } catch {
     throw new SharedError("INVALID_TX", "Không đọc được giao dịch");
   }
-  const scripts = tx.witnessSet().nativeScripts()?.values() ?? [];
-  if (!scripts.some((s) => s.hash() === w.paymentScriptHash)) throw new SharedError("INVALID_TX", "Giao dịch không dùng script của ví này");
+  assertOnlySpend(w, tx);
   const allowed = new Set(keysOf(w.paymentScript));
   const signedBy: string[] = [];
   for (const v of tx.witnessSet().vkeys()?.values() ?? []) {
@@ -256,14 +269,82 @@ export async function inspectSharedTx(w: SharedWallet, txCbor: string, opts: { r
     if (!signedBy.some((k) => !mine.has(k))) throw new SharedError("INVALID_TX", "Giao dịch chưa có chữ ký của cosigner nào khác — không xác minh được nguồn gốc");
   }
   const body = tx.body();
+  const memo = txMemo(txCbor);
   return {
     txHash: resolveTxHash(txCbor),
-    outputs: body.outputs().map((o) => ({ address: o.address().toBech32(), lovelace: o.amount().coin().toString(), tokens: o.amount().multiasset()?.size ?? 0, change: o.address().toBech32() === w.address })),
+    outputs: body.outputs().map((o) => ({ address: o.address().toBech32(), lovelace: o.amount().coin().toString(), tokens: o.amount().multiasset()?.size ?? 0, assets: qty(outputValue(o)), change: o.address().toBech32() === w.address })),
     fee: body.fee().toString(),
+    ...(memo ? { memo: memo.join("\n") } : {}),
+    ...(opts.utxos ? { net: netOutflow(w, tx, opts.utxos) } : {}),
     ttl: body.ttl() === undefined ? undefined : Number(body.ttl()),
     signedBy,
     enough: new Set(signedBy).size >= w.required,
   };
+}
+
+const qty = (t: Totals): AssetQty[] => assetsOf(t).map((a) => ({ unit: a.unit, quantity: a.quantity.toString() }));
+const refuse = (why: string): never => {
+  throw new SharedError("INVALID_TX", `${why}: không ký giao dịch này`);
+};
+
+/**
+ * A multisig transaction may only move funds out of this wallet (AI-45). One signature approves the whole
+ * transaction, so anything else it could carry is refused: mint, certificates, withdrawals (until AI-46),
+ * collateral, reference inputs, governance, Plutus, scripts other than the wallet's payment script, output
+ * datums or reference scripts, metadata other than a CIP-20 message, and a fee above MAX_SHARED_FEE.
+ */
+function assertOnlySpend(w: SharedWallet, tx: Serialization.Transaction) {
+  const b = tx.body();
+  const scripts = tx.witnessSet().nativeScripts()?.values() ?? [];
+  if (!scripts.some((s) => s.hash() === w.paymentScriptHash)) throw new SharedError("INVALID_TX", "Giao dịch không dùng script của ví này");
+  if (scripts.some((s) => s.hash() !== w.paymentScriptHash)) refuse("Giao dịch có script khác ngoài script của ví");
+  if (b.mint() !== undefined) refuse("Giao dịch có mint token");
+  if (b.certs() !== undefined) refuse("Giao dịch có certificate (đăng ký, ủy thác stake hoặc DRep)");
+  if (b.withdrawals() !== undefined) refuse("Giao dịch có rút thưởng");
+  if (b.collateral() !== undefined || b.collateralReturn() !== undefined || b.totalCollateral() !== undefined) refuse("Giao dịch có collateral");
+  if (b.referenceInputs() !== undefined) refuse("Giao dịch có reference input");
+  if (b.votingProcedures() !== undefined || b.proposalProcedures() !== undefined || b.donation() !== undefined || b.currentTreasuryValue() !== undefined || b.update() !== undefined)
+    refuse("Giao dịch có nội dung governance");
+  if (b.requiredSigners() !== undefined || b.scriptDataHash() !== undefined) refuse("Giao dịch có thành phần của Plutus script");
+  const nid = b.networkId();
+  if (nid !== undefined && Number(nid) !== NETWORKS[w.network].networkId) refuse("Giao dịch thuộc mạng khác");
+  const ws = tx.witnessSet();
+  if (ws.bootstraps() !== undefined || ws.plutusV1Scripts() !== undefined || ws.plutusV2Scripts() !== undefined || ws.plutusV3Scripts() !== undefined || ws.plutusData() !== undefined || ws.redeemers() !== undefined)
+    refuse("Giao dịch có witness lạ (Plutus hoặc Byron)");
+  if (b.outputs().some((o) => o.datum() !== undefined || o.scriptRef() !== undefined)) refuse("Giao dịch có output kèm datum hoặc script");
+  const aux = tx.auxiliaryData();
+  if (aux) {
+    const labels = [...(aux.metadata()?.metadata()?.keys() ?? [])].map(String);
+    if (labels.some((l) => l !== "674") || aux.nativeScripts()?.length || aux.plutusV1Scripts()?.length || aux.plutusV2Scripts()?.length || aux.plutusV3Scripts()?.length)
+      refuse("Giao dịch có metadata ngoài ghi chú CIP-20");
+    if (labels.length && !txMemo(tx.toCbor())) refuse("Ghi chú CIP-20 không đúng định dạng");
+  }
+  if (BigInt(b.fee()) > MAX_SHARED_FEE) refuse(`Phí quá cao (trên ${Number(MAX_SHARED_FEE) / 1e6} ADA)`);
+}
+
+/** Every input must be a current UTxO of the wallet; returns what leaves the wallet (inputs minus change, fee included). */
+function netOutflow(w: SharedWallet, tx: Serialization.Transaction, utxos: UTxO[]): { lovelace: string; assets: AssetQty[] } {
+  const b = tx.body();
+  const own = new Map(utxos.filter((u) => u.output.address === w.address).map((u) => [ref(u.input.txHash, u.input.outputIndex), u]));
+  const inputs: Totals = new Map();
+  for (const i of b.inputs().values()) {
+    const u = own.get(ref(i.transactionId(), i.index()));
+    if (!u) refuse("Giao dịch dùng input không thuộc ví này, hoặc input đã bị tiêu");
+    for (const [unit, q] of valueOf(u!.output.amount)) add(inputs, unit, q);
+  }
+  const outputs: Totals = new Map([["lovelace", BigInt(b.fee())]]);
+  const change: Totals = new Map();
+  for (const o of b.outputs()) {
+    const v = outputValue(o);
+    for (const [unit, q] of v) {
+      add(outputs, unit, q);
+      if (o.address().toBech32() === w.address) add(change, unit, q);
+    }
+  }
+  for (const u of new Set([...inputs.keys(), ...outputs.keys()])) if ((inputs.get(u) ?? 0n) !== (outputs.get(u) ?? 0n)) refuse(`Giao dịch không cân bằng (${u})`);
+  const net: Totals = new Map();
+  for (const [unit, q] of inputs) net.set(unit, q - (change.get(unit) ?? 0n));
+  return { lovelace: (net.get("lovelace") ?? 0n).toString(), assets: qty(net) };
 }
 
 /** Ghép nhiều witness set vào giao dịch. */

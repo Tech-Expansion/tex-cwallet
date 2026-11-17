@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type DragEvent } from "react";
 import { Check, ExternalLink, FileDown, Plus, Radar, Share2, ShieldCheck, Trash2, Users } from "lucide-react";
 import { rpc, fmtAda, parseAda, shorten, type AppState, type RequestItem, type SharedInput, type SharedWalletInfo, type TxPreview } from "./rpc";
+import { tokenLabel } from "./Activity";
 import { useAction } from "./hooks";
 import { useT } from "./i18n";
 import { Avatar, Button, Card, Checkbox, CopyField, ErrorText, Field, Notice, Screen, SectionLabel, ShareSheet, SignSheet, Spinner, TopBar, cx, showToast } from "./ui/ui";
@@ -313,10 +314,16 @@ function PreviewCard({ p, required, mine, own }: { p: TxPreview; required: numbe
       {p.outputs.map((o, i) => (
         <div key={i} className="flex justify-between gap-2">
           <span className="min-w-0 truncate font-mono text-moon-soft" title={o.address}>{o.change || o.address === own ? t("ms2.change") : shorten(o.address, 9)}</span>
-          <span className="shrink-0 font-medium tabular-nums text-ink">{fmtAda(o.lovelace)}</span>
+          <span className="shrink-0 font-medium tabular-nums text-ink">{fmtAda(o.lovelace)}{o.assets.length ? ` + ${o.assets.length} token` : ""}</span>
         </div>
       ))}
       <div className="flex justify-between text-moon-dim"><span>{t("ms2.fee")}</span><span className="tabular-nums">{fmtAda(p.fee)}</span></div>
+      {p.net && (
+        <div className="space-y-0.5 border-t border-night-700 pt-1.5" data-testid="ms-net">
+          <div className="flex justify-between font-semibold text-ink"><span>{t("ms2.net")}</span><span className="tabular-nums">{fmtAda(p.net.lovelace)}</span></div>
+          {p.net.assets.map((a) => <div key={a.unit} className="flex justify-between text-ink"><span className="truncate" title={a.unit}>{tokenLabel(a.unit)}</span><span className="tabular-nums">{BigInt(a.quantity).toLocaleString("en-US")}</span></div>)}
+        </div>
+      )}
       <div className={cx("flex items-center gap-1.5 font-medium", p.enough ? "text-ok" : "text-warn")}>
         {p.enough ? <Check size={13} /> : <ShieldCheck size={13} />} {t("ms2.sigs", { n: String(new Set(p.signedBy).size), m: String(required) })}{mine ? ` · ${t("ms2.signed")}` : ""}
       </div>
@@ -368,6 +375,14 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
     }
     setSignFor(undefined);
     await reload();
+  });
+  // Full check (inputs against the wallet's UTxOs, net outflow) before the sign sheet opens (AI-45)
+  const [reviewing, setReviewing] = useState("");
+  const review = useAction(async (request: string) => {
+    act.setError("");
+    setReviewing(request);
+    const info = await rpc<{ preview: TxPreview }>({ type: "sharedInspect", request });
+    setSignFor({ kind: "sign", request, preview: info.preview });
   });
   const submit = useAction(async (request: string) => { const h = await rpc<string>({ type: "sharedSubmit", request }); showToast(t("ms2.submitted"), net.explorerTxUrl + h); await reload(); });
   const remove = useAction(async () => { if (!w || !confirm(t("ms2.removeConfirm", { name: w.name }))) return; await rpc({ type: "sharedRemove", id }); go("/multisig"); });
@@ -449,8 +464,9 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
                         }))}><Share2 size={15} /> {t("ms2.shareRequest")}</Button>
                         {r.preview.enough
                           ? <Button variant="primary" loading={submit.busy} disabled={r.stale || r.expired} onClick={() => void submit.run(r.request)} data-testid="ms-submit">{t("ms2.submit")}</Button>
-                          : <Button variant="primary" disabled={r.iSigned || !canSign || r.stale || r.expired} onClick={() => { act.setError(""); setSignFor({ kind: "sign", request: r.request, preview: r.preview }); }} data-testid="ms-sign">{t("ms2.sign")}</Button>}
+                          : <Button variant="primary" disabled={r.iSigned || !canSign || r.stale || r.expired} loading={review.busy && reviewing === r.request} onClick={() => void review.run(r.request)} data-testid="ms-sign">{t("ms2.sign")}</Button>}
                       </div>
+                      {reviewing === r.request && <ErrorText error={review.error} />}
                       <button className="text-[11px] text-moon-dim hover:text-bad" onClick={() => void rpc({ type: "sharedDismiss", id, request: r.request }).then(reload)}>{t("ms2.dismiss")}</button>
                     </Card>
                   </li>
@@ -483,7 +499,10 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
             ? <Card className="space-y-1 p-3"><div className="text-[22px] font-semibold tabular-nums text-ink">{amt} {net.unit}</div><div className="break-all font-mono text-[11.5px] text-moon">{to.trim()}</div></Card>
             : (
               <>
-                <Card className="p-3"><PreviewCard p={signFor.preview} required={w.required} own={w.address} /></Card>
+                <Card className="space-y-2 p-3">
+                  {signFor.preview.memo && <div className="text-[12.5px] font-medium text-ink">{signFor.preview.memo}</div>}
+                  <PreviewCard p={signFor.preview} required={w.required} own={w.address} />
+                </Card>
                 {new Set(signFor.preview.signedBy).size + 1 >= w.required && (
                   <Checkbox checked={autoSubmit} onChange={setAutoSubmit}>{t("ms2.autoSubmit")}</Checkbox>
                 )}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { MeshWallet, resolvePaymentKeyHash } from "@meshsdk/core";
 import { Cardano, Serialization } from "@meshsdk/core-cst";
-import { sharedKeyHash, signWithSharedKey, buildPaymentScript, makeSharedWallet, buildSharedSend, inspectSharedTx, attachWitnesses, readWitnesses, scriptFromCbor, scriptCborOf, scriptAddress, sharedAddress, type NativeScriptJson, scriptHashOf, toKeyHash, SharedError } from "./shared";
+import { sharedKeyHash, signWithSharedKey, buildPaymentScript, makeSharedWallet, buildSharedSend, inspectSharedTx, attachWitnesses, readWitnesses, scriptFromCbor, scriptCborOf, scriptAddress, sharedAddress, MAX_SHARED_FEE, type NativeScriptJson, scriptHashOf, toKeyHash, SharedError } from "./shared";
 
 const W = [
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
@@ -142,5 +142,81 @@ describe("giao dịch multisig: đề xuất → ký từng phần → ghép", (
     const t = Serialization.Transaction.fromCbor(full as never);
     expect(t.witnessSet().vkeys()?.size()).toBe(2);
     expect(t.witnessSet().nativeScripts()?.size()).toBe(1);
+  });
+});
+
+describe("AI-45: cosigner chỉ ký giao dịch chi tiền từ đúng ví này", () => {
+  const DEST = "addr_test1qq8ac7qqy0vtulyl7wntmsxc6wex80gvcyjy33qffrhm7sh927ysx5sftuw0dlft05dz3c7revpf7jx0xnlcjz3g69mqkt5dmn";
+  const NIGHT = "0691b2fecca1ac4f53cb6dfb00b7013e561d1f34403b957cbb5af1fa4e49474854";
+  const coin = (address: string, hash: string, ada: number, extra: { unit: string; quantity: string }[] = []) =>
+    ({ input: { txHash: hash.repeat(64).slice(0, 64), outputIndex: 0 }, output: { address, amount: [{ unit: "lovelace", quantity: String(ada * 1_000_000) }, ...extra] } });
+  /** Rebuild a transaction with an edited body (and optionally other witnesses or auxiliary data). */
+  const tamper = (tx: string, edit: (b: Cardano.TxBody) => Cardano.TxBody, more: { ws?: (ws: Serialization.TransactionWitnessSet) => void; aux?: Serialization.AuxiliaryData } = {}) => {
+    const t = Serialization.Transaction.fromCbor(tx as never);
+    const ws = t.witnessSet();
+    more.ws?.(ws);
+    return new Serialization.Transaction(Serialization.TransactionBody.fromCore(edit(t.body().toCore())), ws, more.aux ?? t.auxiliaryData()).toCbor();
+  };
+  async function proposal() {
+    const { wallet } = await setup(2);
+    const utxos = [coin(wallet.address, "a", 50), coin(wallet.address, "b", 30, [{ unit: NIGHT, quantity: "1000" }])];
+    const tx = await buildSharedSend(wallet, utxos, DEST, 60_000_000n);
+    return { wallet, utxos, tx };
+  }
+  const refused = (p: Promise<unknown>, why: RegExp) => expect(p).rejects.toMatchObject({ code: "INVALID_TX", message: expect.stringMatching(why) });
+
+  it("giao dịch chi tiền bình thường: hiện số rời ví (cả phí), token theo từng output", async () => {
+    const { wallet, utxos, tx } = await proposal();
+    const p = await inspectSharedTx(wallet, tx, { utxos });
+    expect(p.net).toEqual({ lovelace: String(60_000_000n + BigInt(p.fee)), assets: [] });
+    const change = p.outputs.find((o) => o.change)!;
+    expect(change.assets).toEqual([{ unit: NIGHT, quantity: "1000" }]); // the token stays in the wallet
+    expect(p.outputs.find((o) => o.address === DEST)!.assets).toEqual([]);
+  });
+
+  it("ghi chú nằm trong giao dịch (CIP-20), không phải bên ngoài", async () => {
+    const { wallet, utxos } = await proposal();
+    const tx = await buildSharedSend(wallet, utxos, DEST, 5_000_000n, undefined, { memo: "Lương tháng 11" });
+    expect((await inspectSharedTx(wallet, tx)).memo).toBe("Lương tháng 11");
+  });
+
+  it("từ chối mint, certificate, rút thưởng, collateral, reference input, governance", async () => {
+    const { wallet, tx } = await proposal();
+    const cred = { type: Cardano.CredentialType.KeyHash, hash: "d8db94667f661c4b7958653e048d8e114da35c75ababf82267eef4cf" as never };
+    const someIn = { txId: "c".repeat(64) as never, index: 0 };
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, mint: new Map([[Cardano.AssetId(NIGHT), 1n]]) }))), /mint/);
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, certificates: [{ __typename: Cardano.CertificateType.StakeRegistration, stakeCredential: cred } as never] }))), /certificate/);
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, withdrawals: [{ stakeAddress: Cardano.RewardAccount.fromCredential(cred, Cardano.NetworkId.Testnet), quantity: 1n }] }))), /rút thưởng/);
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, collaterals: [someIn] }))), /collateral/);
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, referenceInputs: [someIn] }))), /reference input/);
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, donation: 1n }))), /governance/);
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, requiredExtraSignatures: [cred.hash] }))), /Plutus/);
+  });
+
+  it("từ chối script khác, metadata lạ và phí quá cao", async () => {
+    const { wallet, tx } = await proposal();
+    const other = (await setup(3)).wallet; // another multisig wallet with the same cosigner keys
+    const extraScript = (ws: Serialization.TransactionWitnessSet) => {
+      const list = [...(ws.nativeScripts()?.values() ?? []), Serialization.NativeScript.fromCbor(scriptCborOf(other.paymentScript) as never)];
+      ws.setNativeScripts(Serialization.CborSet.fromCore(list.map((x) => x.toCore()), Serialization.NativeScript.fromCore) as never);
+    };
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => b, { ws: extraScript })), /script khác/);
+    const aux = Serialization.AuxiliaryData.fromCore({ blob: new Map([[1854n, "x"]]) });
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => b, { aux })), /metadata/);
+    await refused(inspectSharedTx(wallet, tamper(tx, (b) => ({ ...b, fee: MAX_SHARED_FEE + 1n }))), /Phí quá cao/);
+  });
+
+  it("từ chối input của ví multisig khác dùng chung khóa, và input đã bị tiêu", async () => {
+    const { wallet, utxos, tx } = await proposal();
+    // wallet B shares a cosigner key with A; a proposal for A slips in an input that belongs to B
+    const kh = await Promise.all(W.map((w) => sharedKeyHash(w, 0)));
+    const b = makeSharedWallet({ name: "B", network: "preprod", paymentScript: buildPaymentScript(1, [kh[0]!, kh[1]!]) });
+    const fromB = coin(b.address, "d", 900);
+    const slipped = tamper(tx, (body) => ({ ...body, inputs: [...body.inputs, { txId: fromB.input.txHash as never, index: 0 }] }));
+    await refused(inspectSharedTx(wallet, slipped, { utxos: [...utxos, fromB] }), /input không thuộc ví/);
+    // an input that is no longer a UTxO of the wallet (spent)
+    await refused(inspectSharedTx(wallet, tx, { utxos: utxos.slice(1) }), /input không thuộc ví|đã bị tiêu/);
+    // without the UTxO check (receiving a request) the structure alone still passes
+    expect((await inspectSharedTx(wallet, tx)).net).toBeUndefined();
   });
 });

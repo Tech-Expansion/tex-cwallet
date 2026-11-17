@@ -935,7 +935,7 @@ export class WalletManager {
    * of the same transaction, so no separate merge step is needed.
    */
   async receiveRequest(text: string): Promise<{ walletId: string; request: string; preview: TxPreview; merged: boolean }> {
-    const info = await this.inspectRequest(text);
+    const info = await this.inspectRequest(text, { checkInputs: false });
     const r = this.decodeRequest(text);
     const stored = (this.state.requests?.[r.walletId] ?? []).find((x) => this.txKey(x.tx) === this.txKey(r.tx));
     if (stored) {
@@ -1014,7 +1014,7 @@ export class WalletManager {
       }
       const expired = preview.ttl === undefined || (slot !== undefined && slot >= preview.ttl);
       const slotsLeft = preview.ttl !== undefined && slot !== undefined ? Math.max(0, preview.ttl - slot) : undefined;
-      out.push({ request: this.encodeRequest(r), memo: r.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale, expired, slotsLeft });
+      out.push({ request: this.encodeRequest(r), memo: preview.memo, createdAt: r.createdAt, preview, iSigned: preview.signedBy.some((k) => mine.includes(k)), stale, expired, slotsLeft });
     }
     if (changed) await this.save();
     return out;
@@ -1035,22 +1035,35 @@ export class WalletManager {
     const params = await this.p().chain.getProtocolParams().catch(() => undefined);
     if (!params) throw new WalletError("NO_PARAMS", "Không lấy được protocol parameters của preprod; không thể tính phí");
     const tip = await this.p().chain.getTip();
-    const unsigned = await buildSharedSend(w, utxos, to, lovelace, params, { invalidHereafter: tip.slot + SHARED_TTL_SLOTS });
+    const unsigned = await buildSharedSend(w, utxos, to, lovelace, params, { invalidHereafter: tip.slot + SHARED_TTL_SLOTS, memo });
     const signed = attachWitnesses(unsigned, [await signWithSharedKey(this.ownerWords(w), w.myIndex, unsigned)]);
-    const req: SignRequest = { v: 1, kind: "cardano-multisig-sign-request", walletId: w.id, network: w.network, tx: signed, memo: memo?.slice(0, 200), createdAt: Date.now() };
+    const req: SignRequest = { v: 1, kind: "cardano-multisig-sign-request", walletId: w.id, network: w.network, tx: signed, createdAt: Date.now() };
     await this.storeRequest(req);
     return this.encodeRequest(req);
   }
 
-  /** Kiểm tra yêu cầu ký nhận từ người khác (CIP-1854) trước khi hiển thị cho người dùng quyết định. */
-  async inspectRequest(text: string): Promise<{ wallet: SharedEntry; preview: TxPreview; memo?: string; iSigned: boolean }> {
+  /**
+   * Kiểm tra yêu cầu ký nhận từ người khác (CIP-1854) trước khi hiển thị cho người dùng quyết định.
+   * `checkInputs` (default): every input must be a current UTxO of this wallet, and the preview gets the net
+   * outflow (AI-45). Signing always checks inputs; only receiving a request skips it, because the inputs of a
+   * request another cosigner already submitted are spent.
+   */
+  async inspectRequest(text: string, opts: { checkInputs?: boolean } = {}): Promise<{ wallet: SharedEntry; preview: TxPreview; memo?: string; iSigned: boolean }> {
     const r = this.decodeRequest(text);
     const w = this.sharedById(r.walletId);
     if (r.network !== this.state.network || w.network !== this.state.network) throw new SharedError("INVALID_TX", `Yêu cầu thuộc mạng ${r.network}, bạn đang ở ${this.state.network}`);
     const mine = await this.myKeyHashes(w);
-    const preview = await inspectSharedTx(w, r.tx, { requireOtherSigner: !(await this.hasMySignature(w, r.tx)), myKeyHashes: mine });
+    let utxos: UTxO[] | undefined;
+    if (opts.checkInputs !== false) {
+      try {
+        utxos = await this.p().fetcher.fetchAddressUTxOs(w.address);
+      } catch {
+        throw new WalletError("NO_PARAMS", "Không đọc được UTxO của ví multisig, nên chưa kiểm tra được giao dịch. Thử lại sau");
+      }
+    }
+    const preview = await inspectSharedTx(w, r.tx, { requireOtherSigner: !(await this.hasMySignature(w, r.tx)), myKeyHashes: mine, utxos });
     await this.assertNotExpired(preview);
-    return { wallet: w, preview, memo: r.memo, iSigned: preview.signedBy.some((k) => mine.includes(k)) };
+    return { wallet: w, preview, memo: preview.memo, iSigned: preview.signedBy.some((k) => mine.includes(k)) };
   }
   private async hasMySignature(w: SharedEntry, tx: string) {
     const mine = await this.myKeyHashes(w);
