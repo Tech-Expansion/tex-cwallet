@@ -308,6 +308,7 @@ The team rules live in the `tex-vault` and `ai-workflow-kit` repositories; in sh
 - Commit subject: `[<TICKET>] <type>(<scope>): <description>`, Conventional Commits, at most 72 characters, for
   example `[AI-5] feat(core): send ADA with fee preview, sign only after review`.
 - Commits, code comments, ADRs and this README are in English.
+- Releases: `main` → `release/<version>-<date>` → pull request into `production`; see [docs/release.md](docs/release.md).
 - Run `npm run check` before pushing. Anything touching keys, signing or transaction building needs owner review.
 
 ## Troubleshooting
