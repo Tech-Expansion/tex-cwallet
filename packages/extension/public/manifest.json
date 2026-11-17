@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Cardano Multi Wallet",
-  "version": "0.1.0",
-  "description": "Ví Cardano đa ví (chỉ preprod)",
+  "name": "TEX Wallet",
+  "version": "0.2.0",
+  "description": "Open-source Cardano wallet with m-of-n multisig (CIP-1854, CIP-0146). Not audited. Preprod testnet.",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Cardano Multi Wallet",
+    "default_title": "TEX Wallet",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

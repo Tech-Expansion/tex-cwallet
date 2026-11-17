@@ -1,12 +1,23 @@
-# tex-cwallet
+# TEX Wallet
 
-A Cardano wallet as a Chrome extension (plus a web build), **preprod only**. It sends and receives ADA and
-native tokens, shows balances and assets, and runs m-of-n multisig wallets (CIP-1854 keys, CIP-0146
-registration).
+An open-source Cardano wallet for Chrome, made by TexLabs. It sends and receives ADA and native tokens, shows
+balances and assets, stakes, connects to dApps (CIP-30), and runs m-of-n multisig wallets (CIP-1854 keys,
+CIP-0146 registration, compatible with Eternl shared wallets).
 
-> **Preprod only.** There is no mainnet configuration anywhere: the only network is `preprod`, and any other
-> value (stored state, `CARDANO_NETWORK`, RPC) is rejected at startup. Use test keys and faucet tADA only.
-> The wallet has not had a security audit.
+> **Not audited.** The wallet has not had an external security audit. Use it at your own risk, keep a written
+> backup of your mnemonic, and report security problems privately as described in [SECURITY.md](SECURITY.md).
+>
+> **Preprod for now.** This build runs on the `preprod` testnet only: any other network value (stored state,
+> `CARDANO_NETWORK`, RPC) is rejected at startup. Mainnet comes in a later release. Use test funds only.
+
+## Install
+
+- **Chrome Web Store:** link added with the first store release.
+- **GitHub Releases:** download `tex-wallet-<version>.zip` from the
+  [releases page](https://github.com/Tech-Expansion/tex-cwallet/releases), check its SHA-256 against the
+  release notes, unzip it, then in `chrome://extensions` turn on **Developer mode** and **Load unpacked** the
+  folder. A zip install does not update itself.
+- **From source:** see [Quick start](#quick-start).
 
 ## Contents
 
@@ -97,7 +108,7 @@ reload on the extension card.
 The wallet locks itself after 15 minutes without activity. The mnemonic is stored encrypted with your password
 and only lives in memory while the wallet is unlocked.
 
-dApps reach the wallet through CIP-30 as `window.cardano.wallet_cardano`. Every `signTx` and `signData` call
+dApps reach the wallet through CIP-30 as `window.cardano.walletcardano` (shown as "TEX Wallet"). Every `signTx` and `signData` call
 opens an approval window that shows what will be signed.
 
 ## Data source and proxy
@@ -343,3 +354,7 @@ The team rules live in the `tex-vault` and `ai-workflow-kit` repositories; in sh
 | The wallet refuses to start with `UNSUPPORTED_NETWORK` | State saved by an old multi-network build (preview/mainnet). Remove the extension data (or reinstall the extension) and restore your wallet from its mnemonic |
 | "Không lấy được protocol parameters…" | The data source is unreachable; check your connection or the proxy |
 | e2e cannot launch the browser | Set `CHROME_PATH` to your Chrome/Chromium binary |
+
+## License
+
+[Apache License 2.0](LICENSE).
