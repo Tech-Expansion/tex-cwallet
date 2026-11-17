@@ -302,12 +302,36 @@ describe("AI-8: đề xuất → co-sign → submit khi đủ chữ ký", () => 
 
   it("người ký thấy rõ đi đâu, bao nhiêu, phí bao nhiêu, hạn tới slot nào", async () => {
     const w = await setup2of3();
-    const req = await A.proposeShared(w.id, DEST, 7_000_000n);
+    const req = await A.proposeShared(w.id, DEST, 7_000_000n, "Trả tiền thuê tháng 11");
     const info = await B.inspectRequest(req);
     const dest = info.preview.outputs.filter((o) => !o.change);
-    expect(dest).toEqual([{ address: DEST, lovelace: "7000000", tokens: 0, change: false }]);
+    expect(dest).toEqual([{ address: DEST, lovelace: "7000000", tokens: 0, assets: [], change: false }]);
     expect(BigInt(info.preview.fee) > 0n).toBe(true);
     expect(info.preview.ttl).toBe(1_000 + SHARED_TTL_SLOTS);
+    // AI-45: what leaves the wallet (amount + fee), and the memo read from the signed transaction itself
+    expect(info.preview.net).toEqual({ lovelace: String(7_000_000n + BigInt(info.preview.fee)), assets: [] });
+    expect(info.memo).toBe("Trả tiền thuê tháng 11");
+    // a memo changed in the request JSON on the way is ignored: only the one in the transaction counts
+    const edited = JSON.stringify({ ...JSON.parse(req), memo: "Gửi cho kẻ gian" });
+    expect((await B.inspectRequest(edited)).memo).toBe("Trả tiền thuê tháng 11");
+  });
+
+  it("AI-45: không ký yêu cầu có input không phải UTxO hiện tại của ví (ví khác, hoặc đã bị tiêu)", async () => {
+    const w = await setup2of3();
+    const req = JSON.parse(await A.proposeShared(w.id, DEST, 3_000_000n));
+    const t = Serialization.Transaction.fromCbor(req.tx as never);
+    const core = t.body().toCore();
+    const body = Serialization.TransactionBody.fromCore({ ...core, inputs: [...core.inputs, { txId: "c".repeat(64) as never, index: 0 }] });
+    const ws = new Serialization.TransactionWitnessSet();
+    ws.setNativeScripts(t.witnessSet().nativeScripts()!);
+    const unsigned = new Serialization.Transaction(body, ws, t.auxiliaryData());
+    // A signs the tampered body, so origin and signature checks pass; only the input check can catch it
+    const tampered = attachWitnesses(unsigned.toCbor(), [await signWithSharedKey(M[0]!.split(" "), 0, unsigned.toCbor())]);
+    const bad = JSON.stringify({ ...req, tx: tampered });
+    await expect(B.inspectRequest(bad)).rejects.toMatchObject({ code: "INVALID_TX", message: expect.stringMatching(/input không thuộc ví/) });
+    await expect(B.signRequest(bad, PW)).rejects.toMatchObject({ code: "INVALID_TX" });
+    // receiving it is allowed (it may already have been submitted), but it cannot be signed
+    await expect(B.receiveRequest(bad)).resolves.toBeTruthy();
   });
 
   it("AC-002: chữ ký của key ngoài script bị từ chối (khi xem, khi ký, khi submit)", async () => {

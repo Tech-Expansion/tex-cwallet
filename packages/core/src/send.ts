@@ -117,22 +117,22 @@ export function assertPreprodAddress(addr: string, network: NetworkName = "prepr
   if (parsed.getNetworkId() !== cfg.networkId) throw bad();
 }
 
-type Totals = Map<string, bigint>; // "lovelace" | unit -> quantity
-const add = (t: Totals, unit: string, q: bigint) => t.set(unit, (t.get(unit) ?? 0n) + q);
-const valueOf = (amount: { unit: string; quantity: string }[]): Totals => {
+export type Totals = Map<string, bigint>; // "lovelace" | unit -> quantity
+export const add = (t: Totals, unit: string, q: bigint) => t.set(unit, (t.get(unit) ?? 0n) + q);
+export const valueOf = (amount: { unit: string; quantity: string }[]): Totals => {
   const t: Totals = new Map();
   for (const a of amount) add(t, a.unit === "" ? "lovelace" : a.unit, BigInt(a.quantity));
   return t;
 };
-const outputValue = (o: Serialization.TransactionOutput): Totals => {
+export const outputValue = (o: Serialization.TransactionOutput): Totals => {
   const v = o.amount();
   const t: Totals = new Map([["lovelace", BigInt(v.coin())]]);
   for (const [id, q] of v.multiasset() ?? new Map()) add(t, String(id), BigInt(q));
   return t;
 };
-const assetsOf = (t: Totals): SendAsset[] =>
+export const assetsOf = (t: Totals): SendAsset[] =>
   [...t].filter(([u, q]) => u !== "lovelace" && q !== 0n).map(([unit, quantity]) => ({ unit, quantity })).sort((a, b) => (a.unit < b.unit ? -1 : 1));
-const ref = (txHash: string, i: number | bigint) => `${txHash}#${Number(i)}`;
+export const ref = (txHash: string, i: number | bigint) => `${txHash}#${Number(i)}`;
 
 /** Validate the requested amounts of one output and return the merged, normalized token list. */
 function normalizeOutput(req: SendOutput, allowEmpty = false): { to: string; lovelace?: bigint; assets: SendAsset[] } {
