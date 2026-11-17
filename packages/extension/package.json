@@ -8,9 +8,7 @@
     "dev": "vite build --watch",
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "e2e": "node --experimental-strip-types --no-warnings e2e/e2e.mjs",
-    "build:web": "TARGET=web vite build && node scripts/web-post.mjs",
-    "e2e:web": "node --experimental-strip-types --no-warnings e2e/web.mjs"
+    "e2e": "node --experimental-strip-types --no-warnings e2e/e2e.mjs"
   },
   "dependencies": {
     "@wallet/core": "*",

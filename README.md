@@ -29,7 +29,6 @@ CIP-0146 registration, compatible with Eternl shared wallets).
 - [Data source and proxy](#data-source-and-proxy)
 - [Using the wallet](#using-the-wallet)
 - [Testing](#testing)
-- [Deployment](#deployment)
 - [Conventions](#conventions)
 - [Troubleshooting](#troubleshooting)
 
@@ -58,7 +57,7 @@ npm workspaces, TypeScript.
 | Path | What it is |
 | --- | --- |
 | `packages/core` (`@wallet/core`) | Wallet logic, no UI: keys and mnemonics, balances, building and checking transactions, multisig, chain data clients |
-| `packages/extension` (`@wallet/extension`) | Chrome MV3 extension (popup, background service worker, CIP-30 provider) and the web build |
+| `packages/extension` (`@wallet/extension`) | Chrome MV3 extension (popup, background service worker, CIP-30 provider) |
 | `packages/proxy` (`@wallet/proxy`) | Small server that keeps the Blockfrost key off the client, with cache and rate limit. See [its README](packages/proxy/README.md) |
 | `scripts/check-preprod.mjs` | Lint that blocks mainnet URLs, addresses and keys, and secret-looking strings in tracked files |
 | `docs/adr/` | Architecture decisions. [ADR 0001](docs/adr/0001-cardano-library-and-chain-data-source.md): Mesh SDK and the chain data interface |
@@ -87,7 +86,6 @@ Run from the repo root.
 | `npm test` | Unit tests (vitest) for core, extension and proxy. No network needed |
 | `npm run typecheck` | `tsc` for each package |
 | `npm run build` | Build the extension into `packages/extension/dist` |
-| `npm run build:web -w @wallet/extension` | Build the web version into `packages/extension/dist-web` |
 | `npm run dev -w @wallet/extension` | Rebuild the extension on change |
 | `npm run e2e` | End-to-end test of the built extension in Chromium (see [Testing](#testing)) |
 | `npm run proxy` | Start the Blockfrost proxy |
@@ -133,8 +131,7 @@ BLOCKFROST_PREPROD=<your preprod project id> ADMIN_TOKEN=<any secret> npm run pr
 
 Keep real values in `packages/proxy/.env` (ignored by git) or in your process manager, never in the repo.
 Then in the extension: **Cài đặt → Nâng cao → Proxy dữ liệu (Blockfrost)**, enter the proxy URL and tick
-"Dùng Blockfrost qua proxy thay cho Koios". The web build reads the proxy from `VITE_PROXY_URL` at build time,
-or uses `<same origin>/proxy`.
+"Dùng Blockfrost qua proxy thay cho Koios".
 
 More detail (routes, cache, stats): [packages/proxy/README.md](packages/proxy/README.md).
 
@@ -231,7 +228,7 @@ days (the refresh button reloads it). Tap an NFT for its description, policy, at
 Images are shown only with `<img>`; HTML from metadata is never rendered. `ipfs://` links and bare CIDs load
 through the IPFS gateway chosen in **Cài đặt → Nâng cao** (ipfs.io, dweb.link, Pinata or nftstorage.link);
 `ar://` through arweave.net; image `data:` URIs are allowed. Any other host is blocked by the extension CSP
-(`img-src`, also set in `web.html`), and a test keeps that CSP equal to the gateway list in `core/src/nft.ts`.
+(`img-src`), and a test keeps that CSP equal to the gateway list in `core/src/nft.ts`.
 
 ### Address book and ADA Handle
 
@@ -317,8 +314,6 @@ CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" npm r
 The test loads the built extension, walks through onboarding, send validation, settings and multisig, and
 checks the Blockfrost route against a fake upstream behind the real proxy.
 
-The web build has its own e2e: `npm run build:web -w @wallet/extension && npm run e2e:web -w @wallet/extension`.
-
 ### Real multisig run on preprod
 
 ```sh
@@ -329,11 +324,6 @@ npm run flow:status   # balances of the multisig, A and B
 ```
 
 The throwaway wallets live in `.flow-preprod/` (ignored by git, file mode 600). Use them for testnet only.
-
-## Deployment
-
-`deploy.sh` rebuilds the web version and the extension zip on the server. Server and deployment notes are in
-[PLAN.md](PLAN.md) (Vietnamese).
 
 ## Conventions
 

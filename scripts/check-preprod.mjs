@@ -9,7 +9,7 @@ process.chdir(execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: 
 const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
   .split("\0")
   .filter(Boolean)
-  .filter((f) => !/(^|\/)(package-lock\.json|node_modules\/|dist\/|dist-web\/)/.test(f))
+  .filter((f) => !/(^|\/)(package-lock\.json|node_modules\/|dist\/)/.test(f))
   .filter((f) => /\.(ts|tsx|js|mjs|cjs|json|md|html|sh|ya?ml|env)$/.test(f) || f.endsWith(".env.example"))
   .filter((f) => f !== "scripts/check-preprod.mjs");
 

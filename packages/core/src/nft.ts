@@ -17,7 +17,7 @@ export const IPFS_GATEWAYS = ["https://ipfs.io", "https://dweb.link", "https://g
 export type IpfsGateway = (typeof IPFS_GATEWAYS)[number];
 export const DEFAULT_IPFS_GATEWAY: IpfsGateway = "https://ipfs.io";
 export const ARWEAVE_GATEWAY = "https://arweave.net";
-/** Hosts allowed in img-src (keep in sync with the extension manifest and web.html) */
+/** Hosts allowed in img-src (keep in sync with the extension manifest) */
 export const IMAGE_HOSTS = [...IPFS_GATEWAYS, ARWEAVE_GATEWAY];
 
 export const isIpfsGateway = (g: unknown): g is IpfsGateway => typeof g === "string" && (IPFS_GATEWAYS as readonly string[]).includes(g);
