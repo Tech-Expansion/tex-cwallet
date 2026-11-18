@@ -63,12 +63,11 @@ Source code (Apache-2.0): https://github.com/Tech-Expansion/tex-cwallet
 | Single purpose | A Cardano wallet: hold keys locally, show balances, and sign and submit transactions, including m-of-n multisig. |
 | `storage` | Keeps the encrypted recovery phrases, wallet list, multisig wallets, pending sign requests, contacts and settings on the device. |
 | Host permission `https://preprod.koios.rest/*` | Reads Cardano chain data (balances, history, protocol parameters) and submits signed transactions through the public Koios API. |
-| Host permissions `http://localhost/*`, `http://127.0.0.1/*` | Lets developers test their own dApps running locally with the wallet. |
 | Content scripts on `https://*/*` | Injects the standard Cardano wallet API (CIP-30) so websites can request a connection. No page data is read; a site gets nothing until the user approves it. |
 | Remote code | No. All code ships in the package; the CSP allows only `'self'` and `'wasm-unsafe-eval'` for the bundled Cardano serialization library. |
 | Data collected | None. Tick no data categories. |
 | Certifications | Tick all three (no selling, no unrelated use, no creditworthiness use). |
-| Privacy policy URL | https://texlabs.org/wallet/privacy.html |
+| Privacy policy URL | https://github.com/Tech-Expansion/tex-cwallet/blob/main/PRIVACY.md |
 
 ## Distribution
 
