@@ -21,9 +21,7 @@
     "storage"
   ],
   "host_permissions": [
-    "https://preprod.koios.rest/*",
-    "http://127.0.0.1/*",
-    "http://localhost/*"
+    "https://preprod.koios.rest/*"
   ],
   "content_scripts": [
     {
