@@ -98,7 +98,8 @@ Run one test file: `npm test -w @wallet/core -- send` (any part of the file name
 3. Open the extension, set a password (at least 8 characters), then create or restore a wallet.
 
 After a code change, run `npm run build` again (or keep `npm run dev -w @wallet/extension` running) and press
-reload on the extension card.
+reload on the extension card. `dev` does not watch `src/inject/` (the content script and CIP-30 provider):
+restart it after changing those.
 
 The wallet locks itself after 15 minutes without activity. The mnemonic is stored encrypted with your password
 and only lives in memory while the wallet is unlocked.
