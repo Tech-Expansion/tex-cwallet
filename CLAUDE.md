@@ -69,7 +69,7 @@ are required by Mesh. `public/manifest.json` is copied as-is.
   `verifyStakeTx`: inputs, outputs, balance, certificates, metadata). Previews expire after 10 min
   (`PENDING_TTL_MS`). Don't add a signing path that skips the verify step.
 - **Preprod only.** `NetworkName = "preprod"`; every network value from outside goes through `assertNetwork()`.
-  `scripts/check-preprod.mjs` fails the lint on mainnet URLs (`api.koios.rest`, `cardanoscan.io`), `networkId: 1`,
+  `scripts/check-preprod.mjs` fails the lint on mainnet Koios or explorer URLs, a mainnet network id,
   mainnet bech32 (`addr1…`/`stake1…`), and secret-looking strings in any tracked file — including tests and docs.
 - Fees and min-UTxO always come from live protocol parameters; if unavailable, refuse to build.
 - Amounts are `bigint` lovelace / token quantities end to end; never floats.
