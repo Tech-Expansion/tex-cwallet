@@ -35,13 +35,13 @@ export function Settings({ st, refresh, go }: { st: AppState; refresh: () => voi
         </div>
         <div>
           <SectionLabel>{t("settings.language")}</SectionLabel>
-          <Segmented<Lang> value={prefs.lang} onChange={(lang) => setPrefs({ lang })} options={[["vi", "Tiếng Việt"], ["en", "English"]] as const} />
+          <Segmented<Lang> value={prefs.lang} onChange={(lang) => setPrefs({ lang })} options={[["en", "English"], ["vi", "Tiếng Việt"]] as const} />
         </div>
 
-        <button onClick={() => go("/verify")} className="flex w-full items-center gap-2.5 rounded-xl border border-night-800 bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-verify">
+        <button onClick={() => go("/verify")} className="flex w-full items-center gap-2.5 border border-hair bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-verify">
           <ShieldCheck size={16} className="text-accent" /><span className="flex-1">{t("verify.title")}</span><ChevronRight size={15} className="text-moon-dim" />
         </button>
-        <button onClick={() => go("/contacts")} className="flex w-full items-center gap-2.5 rounded-xl border border-night-800 bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-contacts">
+        <button onClick={() => go("/contacts")} className="flex w-full items-center gap-2.5 border border-hair bg-night-900 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-night-850" data-testid="open-contacts">
           <BookUser size={16} className="text-accent" /><span className="flex-1">{t("contacts.title")}</span><ChevronRight size={15} className="text-moon-dim" />
         </button>
 
@@ -55,7 +55,7 @@ export function Settings({ st, refresh, go }: { st: AppState; refresh: () => voi
             <p className="text-[11.5px] text-moon-dim">{t("settings.backupHint")}</p>
             {words ? (
               <>
-                <div className="grid grid-cols-3 gap-1.5">{words.map((w, i) => <span key={i} className="rounded-lg border border-night-700 bg-night-900 px-2 py-1.5 text-[11px]"><span className="text-moon-dim">{i + 1}.</span> {w}</span>)}</div>
+                <div className="grid grid-cols-3 border-l border-t border-hair bg-night-900">{words.map((w, i) => <span key={i} className="border-b border-r border-hair px-2 py-1.5 font-mono text-[11px] text-ink"><span className="inline-block w-5 text-moon-dim">{i + 1}</span>{w}</span>)}</div>
                 <Button block onClick={() => { setWords(undefined); setPw(""); }}><EyeOff size={15} /> {t("settings.hide")}</Button>
               </>
             ) : (
@@ -91,12 +91,12 @@ export function Wallets({ st, refresh, go }: { st: AppState; refresh: () => void
             <div className="flex items-center gap-2.5">
               <Avatar seed={w.id} size={30}>{w.name.slice(0, 1).toUpperCase()}</Avatar>
               <div className="min-w-0 flex-1"><div className="truncate text-[14px] font-semibold text-ink">{w.name}</div><div className="text-[11px] text-moon-dim">{w.kind === "watch" ? t("dash.watchOnly") : `${w.accounts.length} ${t("wallets.account").toLowerCase()}`}</div></div>
-              {w.kind === "mnemonic" && <button className="rounded-lg px-2 py-1 text-[11px] text-accent hover:bg-night-800" onClick={() => void addAcc.run(w.id)}>+ {t("wallets.addAccount")}</button>}
+              {w.kind === "mnemonic" && <button className="px-2 py-1 text-[11px] text-accent hover:bg-night-800" onClick={() => void addAcc.run(w.id)}>+ {t("wallets.addAccount")}</button>}
             </div>
             {w.accounts.map((a) => {
               const active = w.id === st.active.walletId && a.index === st.active.account;
               return (
-                <button key={a.index} onClick={() => void pick.run(w.id, a.index)} className={cx("flex w-full items-center justify-between rounded-xl border px-3 py-2 text-[13px] transition", active ? "border-accent/50 bg-accent/10 text-ink" : "border-night-700 text-moon-soft hover:border-night-600")}>
+                <button key={a.index} onClick={() => void pick.run(w.id, a.index)} className={cx("flex w-full items-center justify-between border px-3 py-2 text-[13px] transition", active ? "border-ink bg-night-850 text-ink" : "border-hair text-moon-soft hover:border-hair-strong")}>
                   <span>{a.name}</span>{active && <Check size={15} className="text-accent" />}
                 </button>
               );
@@ -121,17 +121,17 @@ export function Approve({ id }: { id: string }) {
     <Screen footer={<div className="grid grid-cols-2 gap-2"><Button block onClick={() => void resolve.run(false)}>{t("approve.reject")}</Button><Button variant="primary" block loading={resolve.busy} onClick={() => void resolve.run(true)}>{t("approve.accept")}</Button></div>}>
       <TopBar title={title} />
       <div className="space-y-3 animate-fade-up">
-        <Field label={t("approve.from")}><div className="rounded-xl border border-night-700 bg-night-900 px-3 py-2 font-mono text-[12px] text-ink" data-testid="origin">{a.origin}</div></Field>
+        <Field label={t("approve.from")}><div className="border border-hair bg-night-900 px-3 py-2 font-mono text-[12px] text-ink" data-testid="origin">{a.origin}</div></Field>
         {a.signData ? (
           <>
-            <Field label={t("approve.signAddress")}><div className="break-all rounded-xl border border-night-700 bg-night-900 px-3 py-2 font-mono text-[11.5px] text-ink" data-testid="sign-address">{a.signData.address}</div></Field>
+            <Field label={t("approve.signAddress")}><div className="break-all border border-hair bg-night-900 px-3 py-2 font-mono text-[11.5px] text-ink" data-testid="sign-address">{a.signData.address}</div></Field>
             {a.signData.looksLikeTx && <Notice tone="warn"><span data-testid="sign-tx-warning">{t("approve.looksLikeTx")}</span></Notice>}
             <Field label={a.signData.text !== undefined ? t("approve.payloadText") : t("approve.payloadHex")}>
-              <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap break-all rounded-xl border border-night-700 bg-night-900 p-3 font-mono text-[11.5px] text-moon" data-testid="detail">{a.signData.text ?? a.signData.hex}</pre>
+              <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap break-all border border-hair bg-night-900 p-3 font-mono text-[11.5px] text-moon" data-testid="detail">{a.signData.text ?? a.signData.hex}</pre>
             </Field>
             {a.signData.text !== undefined && <details className="text-[11px] text-moon-dim"><summary className="cursor-pointer">{t("approve.payloadHex")}</summary><div className="break-all font-mono">{a.signData.hex}</div></details>}
           </>
-        ) : a.detail && <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-all rounded-xl border border-night-700 bg-night-900 p-3 font-mono text-[11.5px] text-moon" data-testid="detail">{a.detail}</pre>}
+        ) : a.detail && <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-all border border-hair bg-night-900 p-3 font-mono text-[11.5px] text-moon" data-testid="detail">{a.detail}</pre>}
         <Notice tone="warn">{t("approve.warn")}</Notice>
         <ErrorText error={resolve.error} />
       </div>
@@ -223,7 +223,7 @@ export function VerifySignature({ go }: { go: (r: string) => void }) {
         <Field label={t("verify.address")}><input className="field font-mono text-[11px]" value={address} onChange={(e) => { setAddress(e.target.value); reset(); }} placeholder="addr_test1… / stake_test1…" /></Field>
         <ErrorText error={check.error} />
         {result !== undefined && (
-          <div data-testid="verify-result" className={cx("flex items-center gap-2 rounded-xl border px-3 py-2.5 text-[13px] font-medium", result ? "border-ok/30 bg-ok/10 text-ok" : "border-bad/30 bg-bad/10 text-bad")}>
+          <div data-testid="verify-result" className={cx("flex items-center gap-2 border px-3 py-2.5 text-[13px] font-medium", result ? "tone-ok" : "tone-bad")}>
             {result ? <ShieldCheck size={16} /> : <ShieldAlert size={16} />} {result ? t("verify.valid") : t("verify.invalid")}
           </div>
         )}

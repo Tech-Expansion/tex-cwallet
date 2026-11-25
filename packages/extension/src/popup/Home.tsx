@@ -1,67 +1,58 @@
-import { useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, Droplet, Image as ImageIcon, Layers, RefreshCw, ShieldCheck } from "lucide-react";
-import { rpc, fmtAda, parseAda, shorten, type AppState, type NetInfo, type WalletMeta } from "./rpc";
-import { useAction, useWalletData } from "./hooks";
+import { ArrowDownLeft, ArrowUpRight, ChevronDown, Droplet, Image as ImageIcon, Layers, RefreshCw } from "lucide-react";
+import { fmtAda, shorten, type AppState, type NetInfo, type WalletMeta } from "./rpc";
+import { useWalletData } from "./hooks";
 import { useT } from "./i18n";
-import { ActionButton, Avatar, Button, Card, CopyField, ErrorText, Field, IconButton, Notice, Qr, Screen, SectionLabel, SignSheet, Spinner, Stars, TopBar, cx, showToast } from "./ui/ui";
-import { BackgroundGradient } from "./ui/aceternity/BackgroundGradient";
-import { Meteors } from "./ui/aceternity/Meteors";
-import { HoverList, useHoverItem } from "./ui/aceternity/HoverHighlight";
+import { ActionButton, Avatar, Card, CopyField, ErrorText, IconButton, Notice, Qr, Screen, SectionLabel, Spinner, StatusPill, TopBar } from "./ui/ui";
 
 type Data = ReturnType<typeof useWalletData>;
 export const netOf = (st: AppState) => st.networks.find((n) => n.name === st.network)!;
 
-/** Network label (always preprod). */
-export const NetworkPill = ({ net }: { net: NetInfo }) => (
-    <span data-testid="network-pill" className="flex items-center gap-1.5 rounded-full border border-night-700 bg-night-900 px-2.5 py-1 text-[11px] font-medium text-moon-soft">
-      <span className="h-1.5 w-1.5 rounded-full bg-ok shadow-[0_0_6px] shadow-ok" />
-      {net.label}
-    </span>
-  );
+/** Network label (always preprod), as a live status pill. */
+export const NetworkPill = ({ net }: { net: NetInfo }) => <StatusPill testId="network-pill">{net.label}</StatusPill>;
 
 export function WalletSwitcher({ wallet, onClick }: { wallet?: WalletMeta; onClick: () => void }) {
   const t = useT();
   return (
-    <button onClick={onClick} title={t("dash.chooseWallet")} aria-label={t("dash.chooseWallet")} className="flex min-w-0 items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition hover:bg-night-800">
-      <Avatar seed={wallet?.id ?? "w"} size={28}>{(wallet?.name ?? "W").slice(0, 1).toUpperCase()}</Avatar>
-      <span className="truncate text-[14px] font-semibold text-ink">{wallet?.name ?? t("common.wallet")}</span>
+    <button onClick={onClick} title={t("dash.chooseWallet")} aria-label={t("dash.chooseWallet")} className="flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-night-850">
+      <Avatar seed={wallet?.id ?? "w"} size={28}>{(wallet?.name ?? "W").slice(0, 1)}</Avatar>
+      <span className="truncate text-[15px] font-medium tracking-display text-ink">{wallet?.name ?? t("common.wallet")}</span>
       <ChevronDown size={15} className="shrink-0 text-moon-dim" />
     </button>
   );
 }
 
-function Row({ id, children }: { id: string; children: React.ReactNode }) {
-  const { highlight, onMouseEnter } = useHoverItem(id);
-  return <li className="relative" onMouseEnter={onMouseEnter}>{highlight}{children}</li>;
-}
+/** ADA amount as a figure: the number large, the unit at 0.42em in muted text. */
+export const Figure = ({ value, unit, className, testId }: { value: string; unit: string; className?: string; testId?: string }) => (
+  <div className={className}>
+    <span data-testid={testId} className="tabular-nums">{value}</span>
+    <span className="ml-1.5 align-baseline text-[0.42em] tracking-normal opacity-60">{unit}</span>
+  </div>
+);
 
 export function TxList({ hist, explorer, limit }: { hist?: Data["hist"]; explorer: string; limit?: number }) {
   const t = useT();
   if (!hist) return <div className="flex justify-center py-6"><Spinner size={20} /></div>;
-  if (!hist.length) return <p className="py-6 text-center text-[12px] text-moon-dim">{t("dash.noTx")}</p>;
+  if (!hist.length) return <p className="border border-dashed border-hair py-6 text-center text-[12px] text-moon-dim">{t("dash.noTx")}</p>;
   return (
-    <HoverList>
-      <ul className="space-y-1">
-        {hist.slice(0, limit).map((h) => {
-          const net = BigInt(h.netLovelace);
-          const incoming = net >= 0n;
-          return (
-            <Row key={h.hash} id={h.hash}>
-              <a href={explorer + h.hash} target="_blank" rel="noreferrer" className="relative z-10 flex items-center gap-3 rounded-xl px-1 py-1.5">
-                <span className={cx("grid h-8 w-8 shrink-0 place-items-center rounded-full", incoming ? "bg-ok/15 text-ok" : "bg-bad/15 text-bad")}>
-                  {incoming ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="font-mono text-[12px] text-ink">{shorten(h.hash, 8)}</div>
-                  <div className="text-[11px] text-moon-dim">{new Date(h.blockTime * 1000).toLocaleString()}</div>
-                </div>
-                <span className={cx("text-[13px] font-medium tabular-nums", incoming ? "text-ok" : "text-bad")}>{incoming ? "+" : ""}{fmtAda(h.netLovelace)}</span>
-              </a>
-            </Row>
-          );
-        })}
-      </ul>
-    </HoverList>
+    <ul className="divide-y divide-[rgb(var(--ink)/0.08)] border-y border-hair">
+      {hist.slice(0, limit).map((h) => {
+        const incoming = BigInt(h.netLovelace) >= 0n;
+        return (
+          <li key={h.hash}>
+            <a href={explorer + h.hash} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-1 py-2.5 transition-colors hover:bg-night-850">
+              <span className="grid h-8 w-8 shrink-0 place-items-center border border-hair text-ink">
+                {incoming ? <ArrowDownLeft size={15} /> : <ArrowUpRight size={15} />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-[12px] text-ink">{shorten(h.hash, 8)}</div>
+                <div className="font-mono text-[10.5px] text-moon-dim">{new Date(h.blockTime * 1000).toLocaleString()}</div>
+              </div>
+              <span className="font-mono text-[12.5px] tabular-nums text-ink">{incoming ? "+" : ""}{fmtAda(h.netLovelace)}</span>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -86,26 +77,20 @@ export function Dashboard({ st, data, go }: { st: AppState; data: Data; go: (r: 
           </>
         }
       />
-      <div className="space-y-4 animate-fade-up">
-        <BackgroundGradient containerClassName="rounded-[26px]">
-          <section className="balance relative overflow-hidden rounded-3xl bg-gradient-to-br from-[rgb(var(--card-1))] via-[rgb(var(--card-2))] to-[rgb(var(--card-3))] p-5">
-            <Stars count={14} />
-            <Meteors number={7} />
-            <div className="absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-            <div className="relative">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.1em] text-white/70">
-                <ShieldCheck size={12} /> {t("dash.balance")} · {net.unit} {watch && `· ${t("dash.watchOnly")}`}
-              </div>
-              <div className="mt-2 text-[34px] font-semibold leading-none tracking-tight text-white tabular-nums" data-testid="balance">
-                {data.bal ? fmtAda(lovelace) : "…"}
-              </div>
-              <div className="mt-3 font-mono text-[11px] text-white/70">{shorten(data.addr, 14)}</div>
-              {tokens.length > 0 && <div className="mt-1 text-[11px] text-white/70">+ {tokens.length} {t("dash.tokens")}</div>}
-            </div>
-          </section>
-        </BackgroundGradient>
+      <div className="space-y-5 animate-fade-up">
+        <section className="balance bg-hatch relative border border-[rgb(var(--on-panel)/0.12)] bg-[rgb(var(--panel))] p-5 text-[rgb(var(--on-panel))]">
+          <div className="flex items-center gap-2.5 font-mono text-[11px] opacity-60">
+            <span aria-hidden className="h-px w-5 bg-current" />
+            {t("dash.balance")} · {net.unit}{watch && ` · ${t("dash.watchOnly")}`}
+          </div>
+          <Figure className="mt-4 text-[44px] leading-none tracking-figure" value={data.bal ? fmtAda(lovelace) : "…"} unit={net.unit} testId="balance" />
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-[rgb(var(--on-panel)/0.12)] pt-3 font-mono text-[11px]">
+            <span className="truncate opacity-60">{shorten(data.addr, 12)}</span>
+            {tokens.length > 0 && <span className="shrink-0 opacity-60">+{tokens.length} {t("dash.tokens")}</span>}
+          </div>
+        </section>
 
-        <div className="flex justify-around">
+        <div className="flex justify-between px-1">
           <ActionButton icon={<ArrowUpRight size={20} />} label={t("dash.send")} onClick={() => go("/send")} highlight disabled={watch} />
           <ActionButton icon={<ArrowDownLeft size={20} />} label={t("dash.receive")} onClick={() => go("/receive")} />
           <ActionButton icon={<ImageIcon size={20} />} label="NFT" onClick={() => go("/nfts")} />
@@ -118,19 +103,17 @@ export function Dashboard({ st, data, go }: { st: AppState; data: Data; go: (r: 
         {tokens.length > 0 && (
           <div>
             <SectionLabel>{t("dash.assets")}</SectionLabel>
-            <Card className="p-3">
-              <ul className="space-y-2">
-                {tokens.map((tk) => (
-                  <li key={tk.unit} className="flex items-center gap-3" data-testid="asset">
-                    <Avatar seed={tk.unit} size={28}>{(tk.assetName ?? tk.policyId).slice(0, 2)}</Avatar>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] text-ink" title={tk.assetNameHex}>{tk.assetName ?? (tk.assetNameHex ? `0x${tk.assetNameHex}` : "—")}</span>
-                      <span className="block truncate font-mono text-[10.5px] text-moon-dim" title={tk.policyId}>{shorten(tk.policyId, 8)}{tk.assetName && tk.assetNameHex ? ` · ${shorten(tk.assetNameHex, 6)}` : ""}</span>
-                    </span>
-                    <span className="text-[13px] font-medium tabular-nums text-ink">{BigInt(tk.quantity).toLocaleString("en-US")}</span>
-                  </li>
-                ))}
-              </ul>
+            <Card className="divide-y divide-[rgb(var(--ink)/0.08)] p-0">
+              {tokens.map((tk) => (
+                <div key={tk.unit} className="flex items-center gap-3 px-3 py-2.5" data-testid="asset">
+                  <Avatar seed={tk.unit} size={28}>{(tk.assetName ?? tk.policyId).slice(0, 2)}</Avatar>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] text-ink" title={tk.assetNameHex}>{tk.assetName ?? (tk.assetNameHex ? `0x${tk.assetNameHex}` : "—")}</span>
+                    <span className="block truncate font-mono text-[10.5px] text-moon-dim" title={tk.policyId}>{shorten(tk.policyId, 8)}{tk.assetName && tk.assetNameHex ? ` · ${shorten(tk.assetNameHex, 6)}` : ""}</span>
+                  </span>
+                  <span className="font-mono text-[12.5px] tabular-nums text-ink">{BigInt(tk.quantity).toLocaleString("en-US")}</span>
+                </div>
+              ))}
             </Card>
           </div>
         )}
@@ -146,14 +129,18 @@ export function Dashboard({ st, data, go }: { st: AppState; data: Data; go: (r: 
 
 export function Receive({ st, data, go }: { st: AppState; data: Data; go: (r: string) => void }) {
   const t = useT();
+  const net = netOf(st);
   return (
     <Screen>
-      <TopBar title={t("receive.title")} onBack={() => go("/")} right={<NetworkPill net={netOf(st)} />} />
+      <TopBar title={t("receive.title")} onBack={() => go("/")} right={<NetworkPill net={net} />} />
       <div className="space-y-4 animate-fade-up">
         {data.addr ? <Qr value={data.addr} /> : <div className="grid h-[236px] place-items-center"><Spinner /></div>}
-        <CopyField value={data.addr} testId="addr" />
+        <div>
+          <SectionLabel>{net.addressPrefix}…</SectionLabel>
+          <CopyField value={data.addr} testId="addr" />
+        </div>
         <Notice tone="info">{t("receive.note")}</Notice>
-        {netOf(st).faucetUrl && <a href={netOf(st).faucetUrl} target="_blank" rel="noreferrer" className="block text-center text-[12px] text-accent hover:underline">{t("dash.faucet")}</a>}
+        {net.faucetUrl && <a href={net.faucetUrl} target="_blank" rel="noreferrer" className="block text-center text-[12.5px] text-ink underline decoration-[rgb(var(--ink)/0.3)] underline-offset-4 hover:decoration-ink">{t("dash.faucet")}</a>}
       </div>
     </Screen>
   );

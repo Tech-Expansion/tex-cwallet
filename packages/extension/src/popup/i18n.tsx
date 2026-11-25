@@ -135,13 +135,13 @@ type Prefs = { lang: Lang; theme: ThemePref };
 const read = (): Prefs => {
   try {
     const p = JSON.parse(localStorage.getItem("prefs") ?? "{}");
-    return { lang: p.lang === "en" ? "en" : "vi", theme: ["light", "dark", "system"].includes(p.theme) ? p.theme : "system" };
+    return { lang: p.lang === "vi" ? "vi" : "en", theme: ["light", "dark", "system"].includes(p.theme) ? p.theme : "system" };
   } catch {
-    return { lang: "vi", theme: "system" };
+    return { lang: "en", theme: "system" };
   }
 };
 
-const Ctx = createContext<{ prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void }>({ prefs: { lang: "vi", theme: "system" }, setPrefs: () => {} });
+const Ctx = createContext<{ prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void }>({ prefs: { lang: "en", theme: "system" }, setPrefs: () => {} });
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [prefs, setState] = useState(read);

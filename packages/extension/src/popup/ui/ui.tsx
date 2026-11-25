@@ -1,9 +1,9 @@
-// Thành phần giao diện dùng chung — hệ thiết kế lấy từ wallet-midnight (Cult UI + Aceternity UI, Tailwind, token night/moon/accent).
+// Shared UI in the CKBolt style: ink on paper, pills to act, squares to label, mono for machine-made text,
+// color only for state (ok = settled, warn = pending / action needed, bad = failed).
 import { useEffect, useId, useState, useSyncExternalStore, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import QRCode from "qrcode";
 import { Check, CheckCircle2, ChevronLeft, ExternalLink, KeyRound, Loader2, X } from "lucide-react";
-import { MovingBorderButton } from "./aceternity/MovingBorder";
 import { DynamicIsland } from "./cult/DynamicIsland";
 import { TextureCard } from "./cult/TextureCard";
 import { TextureButton, type TextureVariant } from "./cult/TextureButton";
@@ -16,7 +16,7 @@ export function Screen({ children, footer, className }: { children: ReactNode; f
   return (
     <div className="flex h-full flex-col">
       <div className={cx("scroll-area flex-1 overflow-y-auto px-4 pb-4", className)}>{children}</div>
-      {footer && <div className="border-t border-night-800 bg-night-950/90 px-4 py-3 backdrop-blur">{footer}</div>}
+      {footer && <div className="border-t border-hair bg-night-950 px-4 py-3">{footer}</div>}
     </div>
   );
 }
@@ -24,10 +24,10 @@ export function Screen({ children, footer, className }: { children: ReactNode; f
 export function TopBar({ title, onBack, left, right }: { title?: ReactNode; onBack?: () => void; left?: ReactNode; right?: ReactNode }) {
   const t = useT();
   return (
-    <header className="sticky top-0 z-10 -mx-4 mb-3 flex h-14 items-center gap-2 bg-night-950/85 px-4 backdrop-blur">
+    <header className="sticky top-0 z-10 -mx-4 mb-4 flex h-14 items-center gap-2 border-b border-hair bg-night-950 px-4">
       {onBack && <IconButton label={t("common.back")} onClick={onBack}><ChevronLeft size={18} /></IconButton>}
       {left}
-      {title && <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{title}</h1>}
+      {title && <h1 className="min-w-0 flex-1 truncate text-[16px] font-medium tracking-display text-ink">{title}</h1>}
       {!title && <div className="flex-1" />}
       <div className="flex items-center gap-1.5">{right}</div>
     </header>
@@ -39,8 +39,17 @@ export function Card({ children, className, ...rest }: { children: ReactNode; cl
   return <TextureCard {...rest} innerClassName={cx(!hasPadding && "p-4", className)}>{children}</TextureCard>;
 }
 
+/** Eyebrow label: a 1px rule, then mono text (the site's section labels). */
 export const SectionLabel = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <div className={cx("mb-2 text-[11px] font-medium uppercase tracking-[0.08em] text-moon-dim", className)}>{children}</div>
+  <div className={cx("mb-2.5 flex items-center gap-2.5 font-mono text-[11px] text-moon-soft", className)}>
+    <span aria-hidden className="h-px w-5 shrink-0 bg-moon-soft/60" />
+    <span className="min-w-0 truncate">{children}</span>
+  </div>
+);
+
+/** Square mono tag with a hairline (ticker, "You", …). */
+export const Tag = ({ children, className }: { children: ReactNode; className?: string }) => (
+  <span className={cx("inline-flex items-center gap-1 border border-hair px-1.5 py-px font-mono text-[10.5px] text-moon-soft", className)}>{children}</span>
 );
 
 export function Button({ variant = "secondary", loading, className, children, block, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: TextureVariant; loading?: boolean; block?: boolean }) {
@@ -54,37 +63,38 @@ export function Button({ variant = "secondary", loading, className, children, bl
 
 export function IconButton({ label, children, className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
   return (
-    <button aria-label={label} title={label} className={cx("grid h-9 w-9 place-items-center rounded-xl text-moon-soft transition hover:bg-night-800 hover:text-moon disabled:opacity-40", className)} {...rest}>
+    <button aria-label={label} title={label} className={cx("grid h-9 w-9 place-items-center rounded-full text-moon-soft transition-colors hover:bg-night-850 hover:text-ink disabled:opacity-40", className)} {...rest}>
       {children}
     </button>
   );
 }
 
+/** Dashboard action: square icon box with a hairline that inverts to ink on hover; the primary action is ink already. */
 export function ActionButton({ icon, label, onClick, highlight, disabled }: { icon: ReactNode; label: string; onClick: () => void; highlight?: boolean; disabled?: boolean }) {
   return (
     <button onClick={onClick} disabled={disabled} className="group flex flex-col items-center gap-1.5 disabled:opacity-40">
-      <span className={cx("grid h-12 w-12 place-items-center rounded-2xl border transition group-hover:-translate-y-0.5 group-active:scale-95",
-        highlight ? "border-accent/60 bg-gradient-to-b from-brand-mid to-brand-deep text-on-accent shadow-glow" : "border-night-700 bg-night-850 text-moon group-hover:border-night-600")}>
+      <span className={cx("grid h-12 w-12 place-items-center border transition-colors",
+        highlight ? "border-ink bg-ink text-night-950" : "border-hair bg-night-900 text-ink group-enabled:group-hover:border-ink group-enabled:group-hover:bg-ink group-enabled:group-hover:text-night-950")}>
         {icon}
       </span>
-      <span className="text-[12px] font-medium text-moon-soft group-hover:text-moon">{label}</span>
+      <span className="text-[12px] text-moon-soft group-enabled:group-hover:text-ink">{label}</span>
     </button>
   );
 }
 
 export function Field({ label, hint, children, group }: { label: string; hint?: ReactNode; children: ReactNode; group?: boolean }) {
-  const body = (<><span className="text-[12px] font-medium text-moon-soft">{label}</span>{children}{hint && <span className="block text-[11px] text-moon-dim">{hint}</span>}</>);
+  const body = (<><span className="text-[12px] font-medium text-ink">{label}</span>{children}{hint && <span className="block text-[11px] leading-relaxed text-moon-dim">{hint}</span>}</>);
   return group ? <div role="group" aria-label={label} className="block space-y-1.5">{body}</div> : <label className="block space-y-1.5">{body}</label>;
 }
 
 export function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: readonly (readonly [T, string])[] }) {
   const id = useId();
   return (
-    <div role="tablist" className="grid gap-1 rounded-xl border border-night-800 bg-night-900 p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
+    <div role="tablist" className="grid gap-1 rounded-full border border-hair bg-night-900 p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
       {options.map(([v, label]) => (
         <button key={v} role="tab" aria-selected={value === v} onClick={() => onChange(v)}
-          className={cx("relative h-8 truncate rounded-lg px-2 text-[12px] font-medium transition-colors", value === v ? "text-ink" : "text-moon-dim hover:text-moon")}>
-          {value === v && <motion.span layoutId={`seg-${id}`} transition={{ type: "spring", bounce: 0.25, duration: 0.5 }} className="absolute inset-0 rounded-lg bg-night-700 shadow-sm" />}
+          className={cx("relative h-8 truncate rounded-full px-2 text-[12.5px] transition-colors", value === v ? "text-on-accent" : "text-moon-soft hover:text-ink")}>
+          {value === v && <motion.span layoutId={`seg-${id}`} transition={{ type: "spring", bounce: 0.15, duration: 0.4 }} className="absolute inset-0 rounded-full bg-accent" />}
           <span className="relative">{label}</span>
         </button>
       ))}
@@ -94,10 +104,10 @@ export function Segmented<T extends string>({ value, onChange, options }: { valu
 
 export function Checkbox({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-moon-soft">
+    <label className="flex cursor-pointer items-center gap-2.5 text-[13px] text-moon">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
-      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md border border-night-600 bg-night-900 text-on-accent transition peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent/60">
-        {checked && <Check size={13} strokeWidth={3} />}
+      <span className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] border border-hair-strong bg-night-900 text-on-accent transition peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-ink/60">
+        {checked && <Check size={12} strokeWidth={2.5} />}
       </span>
       {children}
     </label>
@@ -105,22 +115,21 @@ export function Checkbox({ checked, onChange, children }: { checked: boolean; on
 }
 
 export const ErrorText = ({ error }: { error?: string }) =>
-  error ? <p role="alert" className="error animate-fade-up whitespace-pre-wrap rounded-xl border border-bad/30 bg-bad/10 px-3 py-2 text-[12px] text-bad">{error}</p> : null;
+  error ? <p role="alert" className="error tone-bad animate-fade-up whitespace-pre-wrap border px-3 py-2 text-[12px] leading-relaxed">{error}</p> : null;
 
 export const Notice = ({ tone = "info", children }: { tone?: "info" | "warn" | "ok"; children: ReactNode }) => (
-  <p className={cx("rounded-xl border px-3 py-2 text-[12px] leading-relaxed",
-    tone === "warn" && "border-warn/30 bg-warn/10 text-warn", tone === "ok" && "border-ok/30 bg-ok/10 text-ok", tone === "info" && "border-night-700 bg-night-850 text-moon-soft")}>
+  <p className={cx("border px-3 py-2.5 text-[12px] leading-relaxed",
+    tone === "warn" && "tone-warn", tone === "ok" && "tone-ok", tone === "info" && "border-hair bg-night-850 text-moon-soft")}>
     {children}
   </p>
 );
 
-export const Spinner = ({ size = 28 }: { size?: number }) => <Loader2 size={size} className="animate-spin text-accent" aria-label={useT()("common.loading")} />;
+export const Spinner = ({ size = 28 }: { size?: number }) => <Loader2 size={size} className="animate-spin text-moon-dim" aria-label={useT()("common.loading")} />;
 
+/** Square initial box. No generated colors: in this system color only means state. */
 export function Avatar({ seed, size = 32, children }: { seed: string; size?: number; children?: ReactNode }) {
-  let h = 0;
-  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 360;
   return (
-    <span className="grid shrink-0 place-items-center rounded-full font-semibold text-white" style={{ width: size, height: size, fontSize: size * 0.42, background: `linear-gradient(135deg, hsl(${h} 70% 55%), hsl(${(h + 50) % 360} 70% 40%))` }}>
+    <span data-seed={seed} className="grid shrink-0 place-items-center border border-hair bg-night-850 font-mono uppercase text-ink" style={{ width: size, height: size, fontSize: Math.round(size * 0.4) }}>
       {children}
     </span>
   );
@@ -142,8 +151,8 @@ export function CopyField({ value, display, className, testId }: { value: string
   const { copied, copy } = useCopy();
   const t = useT();
   return (
-    <button type="button" onClick={() => copy(value)} aria-label={t("common.copy")} className={cx("flex w-full items-start gap-2 rounded-xl border border-night-700 bg-night-900 px-3 py-2.5 text-left transition hover:border-night-600", className)}>
-      <span data-testid={testId} className="min-w-0 flex-1 break-all font-mono text-[11.5px] leading-relaxed text-moon">{display ?? value}</span>
+    <button type="button" onClick={() => copy(value)} aria-label={t("common.copy")} className={cx("flex w-full items-start gap-2 border border-hair bg-night-900 px-3 py-2.5 text-left transition-colors hover:border-hair-strong", className)}>
+      <span data-testid={testId} className="min-w-0 flex-1 break-all font-mono text-[11.5px] leading-relaxed text-ink">{display ?? value}</span>
       <span className={cx("mt-0.5 shrink-0", copied ? "text-ok" : "text-moon-dim")}><CopyIcon copied={copied} size={15} /></span>
     </button>
   );
@@ -151,40 +160,39 @@ export function CopyField({ value, display, className, testId }: { value: string
 
 export function Qr({ value }: { value: string }) {
   const [src, setSrc] = useState("");
-  useEffect(() => { void QRCode.toDataURL(value, { margin: 1, width: 220, color: { dark: "#0b1020", light: "#ffffff" } }).then(setSrc); }, [value]);
-  return <div className="mx-auto grid h-[236px] w-[236px] place-items-center rounded-2xl bg-white p-2">{src && <img src={src} alt="QR" className="h-full w-full" />}</div>;
+  useEffect(() => { void QRCode.toDataURL(value, { margin: 1, width: 220, color: { dark: "#080503", light: "#ffffff" } }).then(setSrc); }, [value]);
+  return <div className="mx-auto grid h-[236px] w-[236px] place-items-center border border-hair bg-white p-2">{src && <img src={src} alt="QR" className="h-full w-full" />}</div>;
 }
 
 export function WalletLogo({ size = 40 }: { size?: number }) {
-  // Logo "C" mở + ba chấm (nhiều ví); bản gốc: assets/logo.svg. id riêng để nhiều logo không giành gradient của nhau.
-  const id = useId().replace(/:/g, "");
+  // TEX Wallet mark (assets/logo.svg): a straight-stroke "C" with a square clasp. Ink tile with a paper mark;
+  // in dark mode the colors swap (paper tile, ink mark). Below 24 px use the heavier logo-16 strokes.
+  const small = size < 24;
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden>
-      <defs>
-        <linearGradient id={`${id}g`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" style={{ stopColor: "rgb(var(--logo-hi))" }} />
-          <stop offset="1" style={{ stopColor: "rgb(var(--logo-lo))" }} />
-        </linearGradient>
-        <linearGradient id={`${id}s`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff" stopOpacity=".28" />
-          <stop offset=".5" stopColor="#fff" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <circle cx="32" cy="32" r="30" fill={`url(#${id}g)`} />
-      <circle cx="32" cy="32" r="30" fill={`url(#${id}s)`} />
-      <path d="M43.3 20.7A17 17 0 1 0 43.3 43.3" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" />
-      <circle cx="40" cy="23" r="2.6" fill="#fff" />
-      <circle cx="43" cy="32" r="3.4" fill="#fff" />
-      <circle cx="40" cy="41" r="2.6" fill="#fff" />
+      <rect width="64" height="64" rx="14" style={{ fill: "rgb(var(--ink))" }} />
+      <g style={{ stroke: "rgb(var(--night-950))", fill: "rgb(var(--night-950))" }}>
+        {small
+          ? <><path d="M47 16H26a9 9 0 0 0-9 9v14a9 9 0 0 0 9 9h21" fill="none" strokeWidth="8" /><rect x="36" y="27" width="10" height="10" stroke="none" /></>
+          : <><path d="M46 17H26a8 8 0 0 0-8 8v14a8 8 0 0 0 8 8h20" fill="none" strokeWidth="6.5" /><rect x="37" y="28" width="8" height="8" stroke="none" /></>}
+      </g>
     </svg>
   );
 }
 
-export function Stars({ count = 14 }: { count?: number }) {
-  const stars = Array.from({ length: count }, (_, i) => ({ left: `${(i * 37) % 100}%`, top: `${(i * 53) % 100}%`, delay: `${(i % 5) * 0.6}s`, size: i % 4 === 0 ? 2 : 1 }));
+/** Outline status pill with a 6px state dot (the site's "Fiber node" pill). */
+export const StatusPill = ({ children, tone = "ok", testId }: { children: ReactNode; tone?: "ok" | "warn" | "bad"; testId?: string }) => (
+  <span data-testid={testId} className="flex items-center gap-1.5 rounded-full border border-hair-strong px-2.5 py-1 text-[11.5px] text-ink">
+    <span className={cx("h-1.5 w-1.5 rounded-full", tone === "ok" && "bg-ok-bright", tone === "warn" && "bg-warn-bright", tone === "bad" && "bg-bad")} />
+    {children}
+  </span>
+);
+
+/** Bottom sheet: square, hairline on top, ink scrim. */
+export function Sheet({ label, children, className, testId }: { label: string; children: ReactNode; className?: string; testId?: string }) {
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-      {stars.map((s, i) => <span key={i} className="absolute animate-twinkle rounded-full bg-white" style={{ left: s.left, top: s.top, width: s.size, height: s.size, animationDelay: s.delay }} />)}
+    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-[rgb(8_5_3/0.45)] animate-fade-up" role="dialog" aria-modal="true" aria-label={label}>
+      <div data-testid={testId} className={cx("max-h-[92%] overflow-y-auto border-t border-hair bg-night-950 p-4", className)}>{children}</div>
     </div>
   );
 }
@@ -202,17 +210,17 @@ export function SignForm({ onSign, busy, error, submitLabel }: { onSign: (passwo
   return (
     <form className="space-y-2.5" data-testid="sign-form" onSubmit={(e) => { e.preventDefault(); if (pw) onSign(pw); }}>
       <label className="block space-y-1.5">
-        <span className="text-[12px] font-medium text-moon-soft">{t("sign.password")}</span>
+        <span className="text-[12px] font-medium text-ink">{t("sign.password")}</span>
         <div className="relative">
           <KeyRound size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-moon-dim" />
           <input className="field pl-10" type="password" aria-label={t("sign.password")} value={pw} onChange={(e) => setPw(e.target.value)} autoFocus autoComplete="current-password" />
         </div>
       </label>
       <ErrorText error={error} />
-      <MovingBorderButton type="submit" disabled={!pw || busy}>
+      <Button variant="primary" block type="submit" disabled={!pw || busy}>
         {busy && <Loader2 size={16} className="animate-spin" />}
         {busy ? t("send.signing") : (submitLabel ?? t("send.sign"))}
-      </MovingBorderButton>
+      </Button>
     </form>
   );
 }
@@ -220,18 +228,16 @@ export function SignForm({ onSign, busy, error, submitLabel }: { onSign: (passwo
 export function SignSheet({ title, children, onSign, onCancel, busy, error }: { title: string; children: ReactNode; onSign: (password: string) => void; onCancel: () => void; busy: boolean; error?: string }) {
   const t = useT();
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50 backdrop-blur-[2px] animate-fade-up" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="max-h-[92%] overflow-y-auto rounded-t-3xl border-t border-night-700 bg-night-950 p-4 shadow-card">
-        <div className="mb-3 flex items-center gap-2">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent/15 text-accent"><KeyRound size={17} /></span>
-          <h2 className="flex-1 text-[15px] font-semibold text-ink">{title}</h2>
-          <IconButton label={t("common.cancel")} onClick={onCancel} disabled={busy}><X size={16} /></IconButton>
-        </div>
-        <div className="mb-3 space-y-2">{children}</div>
-        <p className="mb-3 text-[11px] leading-relaxed text-moon-dim">{t("sign.note")}</p>
-        <SignForm onSign={onSign} busy={busy} error={error} />
+    <Sheet label={title}>
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="grid h-9 w-9 place-items-center border border-hair text-ink"><KeyRound size={17} /></span>
+        <h2 className="flex-1 text-[16px] font-medium tracking-display text-ink">{title}</h2>
+        <IconButton label={t("common.cancel")} onClick={onCancel} disabled={busy}><X size={16} /></IconButton>
       </div>
-    </div>
+      <div className="mb-3 space-y-2">{children}</div>
+      <p className="mb-3 text-[11px] leading-relaxed text-moon-dim">{t("sign.note")}</p>
+      <SignForm onSign={onSign} busy={busy} error={error} />
+    </Sheet>
   );
 }
 
@@ -255,24 +261,22 @@ export function ShareSheet({ title, value, filename, extra, onClose }: {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50 backdrop-blur-[2px] animate-fade-up" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="max-h-[92%] space-y-3 overflow-y-auto rounded-t-3xl border-t border-night-700 bg-night-950 p-4 shadow-card">
-        <div className="flex items-center gap-2">
-          <h2 className="flex-1 text-[15px] font-semibold text-ink">{title}</h2>
-          <IconButton label={t("common.close")} onClick={onClose}><X size={16} /></IconButton>
-        </div>
-        {value.length <= QR_MAX_CHARS ? <Qr value={value} /> : <p className="text-[11.5px] text-moon-dim">{t("share.qrTooLong")}</p>}
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="primary" onClick={() => main.copy(value)} data-testid="share-copy"><CopyIcon copied={main.copied} size={15} /> {t("common.copy")}</Button>
-          <Button onClick={download} data-testid="share-download">{t("share.download")}</Button>
-        </div>
-        {extra && <Button block onClick={() => second.copy(extra.value)} data-testid="share-extra"><CopyIcon copied={second.copied} size={15} /> {extra.label}</Button>}
+    <Sheet label={title} className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h2 className="flex-1 text-[16px] font-medium tracking-display text-ink">{title}</h2>
+        <IconButton label={t("common.close")} onClick={onClose}><X size={16} /></IconButton>
       </div>
-    </div>
+      {value.length <= QR_MAX_CHARS ? <Qr value={value} /> : <Notice>{t("share.qrTooLong")}</Notice>}
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="primary" onClick={() => main.copy(value)} data-testid="share-copy"><CopyIcon copied={main.copied} size={15} /> {t("common.copy")}</Button>
+        <Button onClick={download} data-testid="share-download">{t("share.download")}</Button>
+      </div>
+      {extra && <Button block onClick={() => second.copy(extra.value)} data-testid="share-extra"><CopyIcon copied={second.copied} size={15} /> {extra.label}</Button>}
+    </Sheet>
   );
 }
 
-// ---------- Thông báo (Dynamic Island) ----------
+// ---------- Thông báo (status pill) ----------
 
 type Island = { kind: "busy"; message: string } | { kind: "success"; message: string; href?: string };
 let island: Island | null = null;
@@ -294,15 +298,15 @@ export function Toaster() {
   const current = useSyncExternalStore((l) => (listeners.add(l), () => listeners.delete(l)), () => island);
   return (
     <DynamicIsland open={!!current} size={current?.kind === "success" ? "long" : "compact"} testId={current?.kind === "success" ? "toast" : "island-busy"}>
-      {current?.kind === "busy" && (<><Loader2 size={15} className="shrink-0 animate-spin text-brand-hi" /><span className="truncate text-[12px] font-medium">{current.message}</span></>)}
+      {current?.kind === "busy" && (<><Loader2 size={15} className="shrink-0 animate-spin opacity-70" /><span className="truncate text-[12.5px]">{current.message}</span></>)}
       {current?.kind === "success" && (
         <>
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-emerald-500/20 text-emerald-400"><CheckCircle2 size={20} /></span>
+          <CheckCircle2 size={20} className="shrink-0 text-ok-bright" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-semibold">{current.message}</p>
-            {current.href && <a href={current.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11.5px] text-brand-hi hover:underline">{t("common.explorer")} <ExternalLink size={11} /></a>}
+            <p className="truncate text-[13px] font-medium">{current.message}</p>
+            {current.href && <a href={current.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-[11px] opacity-70 hover:underline">{t("common.explorer")} <ExternalLink size={11} /></a>}
           </div>
-          <button aria-label="dismiss" onClick={dismissToast} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"><X size={14} /></button>
+          <button aria-label="dismiss" onClick={dismissToast} className="grid h-7 w-7 shrink-0 place-items-center rounded-full opacity-60 hover:opacity-100"><X size={14} /></button>
         </>
       )}
     </DynamicIsland>
