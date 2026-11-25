@@ -140,7 +140,7 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
                               <span className="block truncate text-[12.5px] text-ink">{nameOf(a.unit)}</span>
                               <span className="block truncate font-mono text-[10.5px] text-moon-dim">{shorten(a.policyId, 8)} · {BigInt(a.quantity).toLocaleString("en-US")}</span>
                             </span>
-                            {max && <button className="text-[11px] text-brand-hi hover:underline" onClick={(e) => { e.preventDefault(); update(r.key, { qty: { ...r.qty, [a.unit]: a.quantity } }); }}>{t("send.all")}</button>}
+                            {max && <button className="font-mono text-[11px] text-ink underline decoration-[rgb(var(--ink)/0.3)] underline-offset-2 hover:decoration-ink" onClick={(e) => { e.preventDefault(); update(r.key, { qty: { ...r.qty, [a.unit]: a.quantity } }); }}>{t("send.all")}</button>}
                             <input className="field w-28 text-right" inputMode="numeric" aria-label={`${t("send.tokenQty")} ${nameOf(a.unit)}`} placeholder="0"
                               value={r.qty[a.unit] ?? ""} onChange={(e) => update(r.key, { qty: { ...r.qty, [a.unit]: e.target.value } })} />
                           </label>
@@ -182,8 +182,8 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
             {preview.recipients.map((p, i) => {
               const r = rows[i]?.recipient;
               return (
-                <div key={i} className={cx("space-y-1", i > 0 && "border-t border-night-800 pt-2")} data-testid="send-preview-recipient">
-                  <div className="text-[11px] uppercase tracking-wide text-moon-dim">{preview.recipients.length > 1 ? t("send.recipientN", { n: String(i + 1) }) : t("send.amountLine")} · {net.label}</div>
+                <div key={i} className={cx("space-y-1", i > 0 && "border-t border-hair pt-2")} data-testid="send-preview-recipient">
+                  <div className="font-mono text-[10.5px] text-moon-dim">{preview.recipients.length > 1 ? t("send.recipientN", { n: String(i + 1) }) : t("send.amountLine")} · {net.label}</div>
                   <div className={cx("font-semibold tabular-nums text-ink", preview.recipients.length > 1 ? "text-[16px]" : "text-[22px]")}>{fmtAda(p.lovelace)} {net.unit}</div>
                   {p.assets.map((a) => (
                     <div key={a.unit} className="flex justify-between text-[13px] text-ink"><span className="truncate">{nameOf(a.unit)}</span><span className="tabular-nums">{BigInt(a.quantity).toLocaleString("en-US")}</span></div>
@@ -197,12 +197,12 @@ export function Send({ st, data, go }: { st: AppState; data: Data; go: (r: strin
             })}
             {preview.max && <Notice>{t("send.maxPreview")}</Notice>}
             {preview.memo && (
-              <div className="border-t border-night-800 pt-2">
-                <div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("send.memo")}</div>
+              <div className="border-t border-hair pt-2">
+                <div className="font-mono text-[10.5px] text-moon-dim">{t("send.memo")}</div>
                 <p className="whitespace-pre-wrap break-words text-[12px] text-ink" data-testid="send-preview-memo">{preview.memo.join("")}</p>
               </div>
             )}
-            <div className="flex justify-between border-t border-night-800 pt-2 text-[12.5px] text-moon"><span>{t("send.fee")}</span><span className="tabular-nums" data-testid="send-fee">{fmtAda(preview.fee)} {net.unit}</span></div>
+            <div className="flex justify-between border-t border-hair pt-2 text-[12.5px] text-moon"><span>{t("send.fee")}</span><span className="tabular-nums" data-testid="send-fee">{fmtAda(preview.fee)} {net.unit}</span></div>
             <div className="flex justify-between text-[12.5px] font-medium text-ink"><span>{t("send.total")}</span><span className="tabular-nums">{fmtAda(preview.totalLovelace)} {net.unit}</span></div>
             {(BigInt(preview.change.lovelace) > 0n || preview.change.assets.length > 0) && (
               <div className="flex justify-between text-[11.5px] text-moon-dim"><span>{t("send.change")}</span><span className="tabular-nums">{fmtAda(preview.change.lovelace)} {net.unit}{preview.change.assets.length ? ` + ${preview.change.assets.length} token` : ""}</span></div>

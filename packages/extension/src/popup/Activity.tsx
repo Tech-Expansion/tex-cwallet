@@ -40,9 +40,9 @@ const dayToUnix = (d: string, end = false) => {
 const today = () => new Date().toLocaleDateString("en-CA");
 
 function DirIcon({ d }: { d: TxItem["direction"] }) {
-  const cls = d === "in" ? "bg-ok/15 text-ok" : d === "out" ? "bg-bad/15 text-bad" : "bg-night-800 text-moon";
+  const cls = "border border-hair text-ink";
   return (
-    <span className={cx("grid h-8 w-8 shrink-0 place-items-center rounded-full", cls)}>
+    <span className={cx("grid h-8 w-8 shrink-0 place-items-center", cls)}>
       {d === "in" ? <ArrowDownLeft size={15} /> : d === "out" ? <ArrowUpRight size={15} /> : <ArrowLeftRight size={14} />}
     </span>
   );
@@ -98,18 +98,18 @@ export function Activity({ st }: { st: AppState }) {
                 const net0 = BigInt(h.netLovelace);
                 return (
                   <li key={h.hash}>
-                    <button onClick={() => setOpen(h.hash)} className="flex w-full items-center gap-3 rounded-xl px-1 py-1.5 text-left transition hover:bg-night-850" data-testid="activity-row">
+                    <button onClick={() => setOpen(h.hash)} className="flex w-full items-center gap-3 px-1 py-1.5 text-left transition hover:bg-night-850" data-testid="activity-row">
                       <DirIcon d={h.direction} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 text-[12.5px] text-ink">
                           <span>{t(`activity.dir.${h.direction}`)}</span>
-                          {h.tokens.length > 0 && <span className="rounded-full bg-night-800 px-1.5 text-[10.5px] text-moon">{t("activity.tokens", { n: String(h.tokens.length) })}</span>}
+                          {h.tokens.length > 0 && <span className="border border-hair px-1.5 font-mono text-[10px] text-moon-soft">{t("activity.tokens", { n: String(h.tokens.length) })}</span>}
                         </div>
                         <div className="truncate text-[11px] text-moon-dim">{new Date(h.blockTime * 1000).toLocaleString()}{h.memo ? ` · ${h.memo.split("\n")[0]}` : ""}</div>
                       </div>
                       <div className="text-right">
-                        <div className={cx("text-[13px] font-medium tabular-nums", net0 > 0n ? "text-ok" : net0 < 0n ? "text-bad" : "text-moon")}>{net0 > 0n ? "+" : ""}{fmtAda(h.netLovelace)}</div>
-                        {BigInt(h.feePaid) > 0n && <div className="text-[10.5px] tabular-nums text-moon-dim">{t("send.fee")} {fmtAda(h.feePaid)}</div>}
+                        <div className={"font-mono text-[12.5px] tabular-nums text-ink"}>{net0 > 0n ? "+" : ""}{fmtAda(h.netLovelace)}</div>
+                        {BigInt(h.feePaid) > 0n && <div className="font-mono text-[10px] tabular-nums text-moon-dim">{t("send.fee")} {fmtAda(h.feePaid)}</div>}
                       </div>
                     </button>
                   </li>
@@ -129,8 +129,8 @@ export function Activity({ st }: { st: AppState }) {
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const t = useT();
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50 backdrop-blur-[2px] animate-fade-up" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="max-h-[92%] space-y-3 overflow-y-auto rounded-t-3xl border-t border-night-700 bg-night-950 p-4 shadow-card">
+    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-[rgb(8_5_3/0.45)] animate-fade-up" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="max-h-[92%] space-y-3 overflow-y-auto border-t border-hair bg-night-950 p-4">
         <div className="flex items-center gap-2">
           <h2 className="flex-1 text-[15px] font-semibold text-ink">{title}</h2>
           <IconButton label={t("common.close")} onClick={onClose}><X size={16} /></IconButton>
@@ -146,7 +146,7 @@ function IOList({ title, rows, mine }: { title: string; rows: TxItem["inputs"]; 
     <div className="space-y-1">
       <SectionLabel>{title}</SectionLabel>
       {rows.map((r, i) => (
-        <div key={i} className={cx("rounded-lg border px-2 py-1.5", mine.has(r.address) ? "border-accent/40 bg-accent/5" : "border-night-800")}>
+        <div key={i} className={cx("border px-2 py-1.5", mine.has(r.address) ? "border-accent/40 bg-accent/5" : "border-hair")}>
           <div className="flex justify-between gap-2 text-[11.5px]">
             <span className="truncate font-mono text-moon" title={r.address}>{shorten(r.address, 10)}</span>
             <span className="shrink-0 tabular-nums text-ink">{fmtAda(r.lovelace)}</span>
@@ -178,15 +178,15 @@ function TxSheet({ hash, sharedId, explorer, unit, onClose }: { hash: string; sh
             <div className="flex justify-between text-[12px] text-moon"><span>{t("send.fee")}</span><span className="tabular-nums">{fmtAda(tx.fee)} {unit}{BigInt(tx.feePaid) === 0n ? ` (${t("activity.feeOther")})` : ""}</span></div>
             <div className="flex justify-between text-[11.5px] text-moon-dim"><span>{new Date(tx.blockTime * 1000).toLocaleString()}</span><span>#{tx.blockHeight}</span></div>
             <div className="break-all font-mono text-[10.5px] text-moon-dim">{tx.hash}</div>
-            <a href={explorer + tx.hash} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11.5px] text-brand-hi hover:underline">{t("common.explorer")} <ExternalLink size={11} /></a>
+            <a href={explorer + tx.hash} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-[11px] text-ink underline decoration-[rgb(var(--ink)/0.3)] underline-offset-2 hover:decoration-ink">{t("common.explorer")} <ExternalLink size={11} /></a>
           </Card>
-          {tx.memo && <div className="space-y-1"><SectionLabel>{t("activity.memo")}</SectionLabel><p className="whitespace-pre-wrap break-words rounded-lg border border-night-800 px-2 py-1.5 text-[12px] text-ink" data-testid="tx-memo">{tx.memo}</p></div>}
+          {tx.memo && <div className="space-y-1"><SectionLabel>{t("activity.memo")}</SectionLabel><p className="whitespace-pre-wrap break-words border border-hair px-2 py-1.5 text-[12px] text-ink" data-testid="tx-memo">{tx.memo}</p></div>}
           <IOList title={t("activity.inputs", { n: String(tx.inputs.length) })} rows={tx.inputs} mine={mine} />
           <IOList title={t("activity.outputs", { n: String(tx.outputs.length) })} rows={tx.outputs} mine={mine} />
           {metaKeys.length > 0 && (
             <div className="space-y-1">
               <SectionLabel>{t("activity.metadata")}</SectionLabel>
-              <pre className="max-h-40 overflow-auto rounded-lg border border-night-800 p-2 font-mono text-[10.5px] text-moon">{JSON.stringify(tx.metadata, null, 2)}</pre>
+              <pre className="max-h-40 overflow-auto border border-hair p-2 font-mono text-[10.5px] text-moon">{JSON.stringify(tx.metadata, null, 2)}</pre>
             </div>
           )}
         </div>

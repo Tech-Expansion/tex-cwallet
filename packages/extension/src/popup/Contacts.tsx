@@ -64,7 +64,7 @@ export function Contacts({ st, go }: { st: AppState; go: (r: string) => void }) 
         ) : (
           <ul className="space-y-1" data-testid="contact-list">
             {shown.map((c) => (
-              <li key={c.id} className="flex items-center gap-2.5 rounded-xl px-1 py-1.5">
+              <li key={c.id} className="flex items-center gap-2.5 px-1 py-1.5">
                 <Avatar seed={c.address} size={30}>{c.name.slice(0, 1).toUpperCase()}</Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] text-ink">{c.name}</div>
@@ -103,8 +103,8 @@ export function ContactPicker({ onPick, onClose }: { onPick: (c: Contact) => voi
   const { list, error } = useContacts();
   const [q, setQ] = useState("");
   return (
-    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50 backdrop-blur-[2px] animate-fade-up" role="dialog" aria-modal="true" aria-label={t("contacts.pick")}>
-      <div className="max-h-[80%] space-y-3 overflow-y-auto rounded-t-3xl border-t border-night-700 bg-night-950 p-4 shadow-card">
+    <div className="fixed inset-0 z-40 flex flex-col justify-end bg-[rgb(8_5_3/0.45)] animate-fade-up" role="dialog" aria-modal="true" aria-label={t("contacts.pick")}>
+      <div className="max-h-[80%] space-y-3 overflow-y-auto border-t border-hair bg-night-950 p-4">
         <div className="flex items-center gap-2">
           <h2 className="flex-1 text-[15px] font-semibold text-ink">{t("contacts.pick")}</h2>
           <IconButton label={t("common.close")} onClick={onClose}><X size={16} /></IconButton>
@@ -115,7 +115,7 @@ export function ContactPicker({ onPick, onClose }: { onPick: (c: Contact) => voi
           <ul className="space-y-1">
             {filterContacts(list, q).map((c) => (
               <li key={c.id}>
-                <button onClick={() => onPick(c)} className="flex w-full items-center gap-2.5 rounded-xl px-1 py-1.5 text-left hover:bg-night-850" data-testid="contact-pick">
+                <button onClick={() => onPick(c)} className="flex w-full items-center gap-2.5 px-1 py-1.5 text-left hover:bg-night-850" data-testid="contact-pick">
                   <Avatar seed={c.address} size={28}>{c.name.slice(0, 1).toUpperCase()}</Avatar>
                   <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-ink">{c.name}</span><span className="block truncate font-mono text-[10.5px] text-moon-dim">{shorten(c.address, 10)}</span></span>
                 </button>

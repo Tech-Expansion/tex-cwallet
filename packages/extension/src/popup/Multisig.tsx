@@ -111,7 +111,7 @@ function List({ st, go }: { st: AppState; go: (r: string) => void }) {
     <Screen>
       <TopBar title={t("ms2.title")} right={<NetworkPill net={netOf(st)} />} />
       <div className="space-y-4 animate-fade-up">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 [&>button]:h-10 [&>button]:gap-1.5 [&>button]:whitespace-nowrap [&>button]:px-2 [&>button]:text-[13px]">
           <Button loading={discover.busy} onClick={() => void discover.run()} data-testid="ms-discover"><Radar size={15} /> {t("ms2.discover")}</Button>
           <Button variant="primary" onClick={() => go("/multisig/new")} data-testid="ms-new"><Plus size={15} /> {t("ms2.create")}</Button>
           <Button onClick={() => go("/multisig/import")} data-testid="ms-import"><FileDown size={15} /> {t("ms2.import")}</Button>
@@ -124,7 +124,7 @@ function List({ st, go }: { st: AppState; go: (r: string) => void }) {
           <ul className="space-y-2">
             {wallets.map((w) => (
               <li key={w.id}>
-                <button onClick={() => go(walletRoute(w.id))} data-testid="ms-item" className="flex w-full items-center gap-3 rounded-2xl border border-night-700 bg-night-850 p-3 text-left transition hover:border-night-600">
+                <button onClick={() => go(walletRoute(w.id))} data-testid="ms-item" className="flex w-full items-center gap-3 border border-hair bg-night-850 p-3 text-left transition hover:border-hair-strong">
                   <Avatar seed={w.id} size={34}><Users size={16} /></Avatar>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[14px] font-semibold text-ink">{w.name}</div>
@@ -319,7 +319,7 @@ function PreviewCard({ p, required, mine, own }: { p: TxPreview; required: numbe
       ))}
       <div className="flex justify-between text-moon-dim"><span>{t("ms2.fee")}</span><span className="tabular-nums">{fmtAda(p.fee)}</span></div>
       {p.net && (
-        <div className="space-y-0.5 border-t border-night-700 pt-1.5" data-testid="ms-net">
+        <div className="space-y-0.5 border-t border-hair pt-1.5" data-testid="ms-net">
           <div className="flex justify-between font-semibold text-ink"><span>{t("ms2.net")}</span><span className="tabular-nums">{fmtAda(p.net.lovelace)}</span></div>
           {p.net.assets.map((a) => <div key={a.unit} className="flex justify-between text-ink"><span className="truncate" title={a.unit}>{tokenLabel(a.unit)}</span><span className="tabular-nums">{BigInt(a.quantity).toLocaleString("en-US")}</span></div>)}
         </div>
@@ -413,7 +413,7 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
           )}
           <Card className="space-y-2 p-3">
             <div className="flex items-end justify-between">
-              <div><div className="text-[11px] uppercase tracking-wide text-moon-dim">{t("ms2.balance")}</div><div className="text-[26px] font-semibold tabular-nums text-ink" data-testid="ms-balance">{bal === undefined ? t("ms2.balanceLoading") : fmtAda(bal)} <span className="text-[13px] text-moon-dim">{net.unit}</span></div></div>
+              <div><div className="font-mono text-[10.5px] text-moon-dim">{t("ms2.balance")}</div><div className="text-[30px] leading-tight tracking-figure tabular-nums text-ink" data-testid="ms-balance">{bal === undefined ? t("ms2.balanceLoading") : fmtAda(bal)} <span className="text-[13px] text-moon-dim">{net.unit}</span></div></div>
               <div className="text-[12px] font-medium text-moon-soft">{t("ms2.of", { m: String(w.required), n: String(w.signers.length) })}</div>
             </div>
             <CopyField value={w.address} testId="ms-address" />
@@ -428,7 +428,7 @@ function Detail({ st, id, go, created }: { st: AppState; id: string; go: (r: str
                   <Avatar seed={s.keyHash} size={22}>{(s.name || "?").slice(0, 1).toUpperCase()}</Avatar>
                   <span className="font-medium text-ink">{s.name || `Cosigner ${i + 1}`}</span>
                   <span className="min-w-0 flex-1 truncate font-mono text-moon-dim">{shorten(s.keyHash, 8)}</span>
-                  {s.keyHash === myKey && <span className="rounded bg-accent/15 px-1.5 text-[10px] text-accent">{t("ms2.you")}</span>}
+                  {s.keyHash === myKey && <span className="border border-hair px-1.5 font-mono text-[10px] text-ink">{t("ms2.you")}</span>}
                 </li>
               ))}
             </ul>

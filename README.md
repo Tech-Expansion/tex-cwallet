@@ -114,7 +114,7 @@ is back.
 
 ## Using the wallet
 
-The UI is in Vietnamese by default (switch to English in **Cài đặt**). Labels below are the Vietnamese ones.
+The UI is in English by default (switch to Vietnamese in **Settings → Language**). Labels below are the Vietnamese ones.
 
 ### Create or restore a wallet
 

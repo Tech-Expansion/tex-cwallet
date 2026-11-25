@@ -1,4 +1,4 @@
-// Chạy trong page (MAIN world): đăng ký window.cardano.wallet_cardano theo CIP-30.
+// Chạy trong page (MAIN world): đăng ký window.cardano.walletcardano theo CIP-30.
 const pending = new Map<string, { resolve: (v: any) => void; reject: (e: any) => void }>();
 window.addEventListener("message", (ev) => {
   if (ev.source !== window || ev.data?.target !== "wallet-cardano-page") return;
@@ -33,7 +33,7 @@ const fullApi = Object.freeze({
 
 const wallet = Object.freeze({
   name: "TEX Wallet",
-  icon: "data:image/svg+xml;base64," + btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient><linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient></defs><circle cx="32" cy="32" r="30" fill="url(#bg)"/><circle cx="32" cy="32" r="30" fill="url(#sheen)"/><path d="M43.3 20.7A17 17 0 1 0 43.3 43.3" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/><circle cx="40" cy="23" r="2.6" fill="#fff"/><circle cx="43" cy="32" r="3.4" fill="#fff"/><circle cx="40" cy="41" r="2.6" fill="#fff"/></svg>'),
+  icon: "data:image/svg+xml;base64," + btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#080503"/><path d="M46 17H26a8 8 0 0 0-8 8v14a8 8 0 0 0 8 8h20" fill="none" stroke="#FAFAF9" stroke-width="6.5"/><rect x="37" y="28" width="8" height="8" fill="#FAFAF9"/></svg>'),
   apiVersion: "0.1.0",
   supportedExtensions: [],
   isEnabled: () => call("isEnabled"),

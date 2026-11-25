@@ -1,29 +1,43 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { KeyRound, Plus, Download } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ArrowRight, KeyRound, Download } from "lucide-react";
 import { rpc } from "./rpc";
 import { useAction } from "./hooks";
 import { useT } from "./i18n";
-import { Button, Checkbox, ErrorText, Field, Notice, Screen, Segmented, TopBar, WalletLogo, Stars, cx } from "./ui/ui";
+import { Button, Checkbox, ErrorText, Field, Notice, Screen, Segmented, StatusPill, TopBar, WalletLogo, cx } from "./ui/ui";
+
+/** Full-screen paper page with the site's faint vertical grid, logo + wordmark on top, network pill on the right. */
+function Poster({ children }: { children: ReactNode }) {
+  const t = useT();
+  return (
+    <div className="bg-grid flex h-full flex-col px-6 pb-6 pt-5">
+      <div className="flex items-center gap-2.5">
+        <WalletLogo size={26} />
+        <span className="text-[17px] tracking-display text-ink">{t("welcome.title")}</span>
+        <span className="flex-1" />
+        <StatusPill>Preprod</StatusPill>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export function Welcome({ go }: { go: (r: string) => void }) {
   const t = useT();
   return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-6 overflow-hidden px-6 text-center">
-      <Stars count={22} />
-      <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", duration: 0.7 }} className="relative">
-        <div className="absolute inset-0 -z-10 rounded-full bg-accent/30 blur-2xl" />
-        <WalletLogo size={84} />
-      </motion.div>
-      <div className="relative space-y-2">
-        <h1 className="text-[22px] font-semibold text-ink">{t("welcome.title")}</h1>
-        <p className="text-[13px] leading-relaxed text-moon-soft">{t("welcome.sub")}</p>
+    <Poster>
+      <div className="mt-auto space-y-5 animate-fade-up">
+        <div className="flex items-center gap-2.5 font-mono text-[11px] text-moon-soft">
+          <span aria-hidden className="h-px w-8 bg-moon-soft/60" />
+          CIP-30 · CIP-1852 · CIP-1854
+        </div>
+        <h1 className="text-[44px] leading-[0.95] tracking-display text-ink">{t("welcome.title")}</h1>
+        <p className="text-[15px] leading-relaxed text-moon-soft">{t("welcome.sub")}</p>
       </div>
-      <div className="relative w-full space-y-2.5">
-        <Button variant="primary" block onClick={() => go("/create")}><Plus size={16} /> {t("welcome.create")}</Button>
-        <Button block onClick={() => go("/import")}><Download size={16} /> {t("welcome.import")}</Button>
+      <div className="mt-8 space-y-2.5">
+        <Button variant="primary" block className="h-12" onClick={() => go("/create")}>{t("welcome.create")} <ArrowRight size={16} /></Button>
+        <Button block className="h-12" onClick={() => go("/import")}><Download size={16} /> {t("welcome.import")}</Button>
       </div>
-    </div>
+    </Poster>
   );
 }
 
@@ -75,9 +89,9 @@ export function WalletForm({ initial, needPassword, onDone, onBack }: { initial:
         {mode === "new" && (
           <>
             <Notice tone="warn">{t("create.warn")}</Notice>
-            <div className="grid grid-cols-3 gap-1.5" data-testid="words">
+            <div className="grid grid-cols-3 border-l border-t border-hair bg-night-900" data-testid="words">
               {words.map((w, i) => (
-                <span key={i} className="word rounded-lg border border-night-700 bg-night-900 px-2 py-1.5 text-[11.5px] text-moon"><span className="text-moon-dim">{i + 1}.</span> {w}</span>
+                <span key={i} className="word border-b border-r border-hair px-2 py-1.5 font-mono text-[11.5px] text-ink"><span className="inline-block w-5 text-moon-dim">{i + 1}</span>{w}</span>
               ))}
             </div>
             <Checkbox checked={ok} onChange={setOk}>{t("create.confirm")}</Checkbox>
@@ -96,18 +110,22 @@ export function Unlock({ onDone }: { onDone: () => void }) {
   const [pw, setPw] = useState("");
   const a = useAction(async () => { await rpc({ type: "unlock", password: pw }); onDone(); });
   return (
-    <div className="relative flex h-full flex-col items-center justify-center gap-5 overflow-hidden px-6">
-      <Stars count={18} />
-      <WalletLogo size={64} />
-      <h1 className="relative text-[20px] font-semibold text-ink">{t("unlock.title")}</h1>
-      <form className="relative w-full space-y-3" onSubmit={(e) => { e.preventDefault(); if (pw) void a.run(); }}>
+    <Poster>
+      <div className="mt-auto space-y-3 animate-fade-up">
+        <div className="flex items-center gap-2.5 font-mono text-[11px] text-moon-soft">
+          <span aria-hidden className="h-px w-8 bg-moon-soft/60" />
+          AES-GCM · PBKDF2
+        </div>
+        <h1 className="text-[36px] leading-[0.95] tracking-display text-ink">{t("unlock.title")}</h1>
+      </div>
+      <form className="mt-6 w-full space-y-3" onSubmit={(e) => { e.preventDefault(); if (pw) void a.run(); }}>
         <div className="relative">
           <KeyRound size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-moon-dim" />
           <input className={cx("field pl-10")} type="password" autoFocus aria-label={t("common.password")} placeholder={t("unlock.hint")} value={pw} onChange={(e) => setPw(e.target.value)} />
         </div>
         <ErrorText error={a.error} />
-        <Button variant="primary" block type="submit" loading={a.busy} disabled={!pw}>{t("unlock.submit")}</Button>
+        <Button variant="primary" block className="h-12" type="submit" loading={a.busy} disabled={!pw}>{t("unlock.submit")}</Button>
       </form>
-    </div>
+    </Poster>
   );
 }

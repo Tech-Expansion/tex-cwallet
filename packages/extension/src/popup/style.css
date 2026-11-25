@@ -3,96 +3,148 @@
 @tailwind utilities;
 
 @layer base {
-  /* Giao diện tối (mặc định). Giá trị "R G B" để Tailwind ghép độ trong suốt. Hệ thiết kế theo wallet-midnight, màu thương hiệu Cardano (xanh). */
+  /* CKBolt design system: ink on paper, warm neutrals, color only for state. Values are "R G B" for Tailwind alpha. */
   :root {
-    --night-950: 7 11 24;
-    --night-900: 12 17 34;
-    --night-850: 17 24 46;
-    --night-800: 24 33 62;
-    --night-700: 36 48 88;
-    --night-600: 50 66 122;
-    --night-500: 78 98 168;
-    --moon: 214 224 255;
-    --moon-soft: 160 176 222;
-    --moon-dim: 115 132 183;
-    --ink: 255 255 255;
-    --accent: 59 130 246;
-    --accent-hover: 96 165 250;
-    --ok: 61 220 151;
-    --warn: 245 195 91;
-    --bad: 255 107 129;
-    --shadow-card: 0 1px 0 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px -12px rgba(0, 0, 0, 0.6);
-    --brand-hi: 147 197 253;
-    --brand-mid: 59 130 246;
-    --brand-deep: 29 78 216;
-    --on-accent: 255 255 255;
-    --card-1: 16 44 128;
-    --card-2: 30 80 210;
-    --card-3: 56 140 248;
-    --logo-hi: 147 197 253;
-    --logo-lo: 37 99 235;
-    color-scheme: dark;
-  }
-  :root[data-theme='light'] {
-    --night-950: 244 247 253;
-    --night-900: 255 255 255;
-    --night-850: 236 242 252;
-    --night-800: 224 233 248;
-    --night-700: 205 219 242;
-    --night-600: 170 191 226;
-    --night-500: 110 135 185;
-    --moon: 25 40 80;
-    --moon-soft: 55 75 120;
-    --moon-dim: 100 120 160;
-    --ink: 10 20 50;
-    --accent: 29 78 216;
-    --accent-hover: 30 64 175;
-    --ok: 12 140 88;
-    --warn: 168 106 10;
-    --bad: 214 48 78;
-    --shadow-card: 0 1px 2px rgba(20, 40, 100, 0.06), 0 8px 24px -14px rgba(20, 40, 100, 0.25);
-    --on-accent: 255 255 255;
+    --paper: 250 250 249;      /* #FAFAF9 page */
+    --night-950: 250 250 249;  /* page ground */
+    --night-900: 255 255 255;  /* card, input */
+    --night-850: 243 242 238;  /* quiet fill (secondary) */
+    --night-800: 236 235 231;  /* muted: tracks, hover */
+    --night-700: 218 215 208;  /* solid border */
+    --night-600: 211 204 199;  /* warm-200 */
+    --night-500: 168 156 146;  /* warm-400, decor only */
+    --ink: 8 5 3;              /* #080503 foreground */
+    --moon: 67 56 48;          /* warm-700: strong body text */
+    --moon-soft: 94 83 74;     /* #5E534A text-muted (7.1:1) */
+    --moon-dim: 110 99 90;     /* captions, still ≥ 4.5:1 on paper */
+    --accent: 8 5 3;           /* primary action = ink */
+    --accent-hover: 67 56 48;
+    --on-accent: 250 250 249;
+    --ok: 0 118 84;            /* #007654 */
+    --ok-bright: 0 186 135;    /* #00BA87 */
+    --ok-soft: 224 249 237;    /* #E0F9ED */
+    --warn: 154 91 0;          /* #9A5B00 */
+    --warn-bright: 239 168 49; /* #EFA831 */
+    --warn-soft: 255 242 216;  /* #FFF2D8 */
+    --bad: 228 0 20;           /* #E40014 */
+    --bad-soft: 255 239 238;   /* #FFEFEE */
+    /* The one ink panel per screen (balance). */
+    --panel: 8 5 3;
+    --on-panel: 250 250 249;
+    --font-sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
     color-scheme: light;
+  }
+  /* Instrument Sans has no Vietnamese subset (U+1EA0–1EF1): use a Vietnamese-complete grotesk for vi. */
+  :root[lang='vi'] {
+    --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  /* Dark = the site's ink sections: paper text on ink, 10–12% paper hairlines. */
+  :root[data-theme='dark'] {
+    --night-950: 8 5 3;
+    --night-900: 18 14 11;
+    --night-850: 26 21 17;
+    --night-800: 36 30 25;
+    --night-700: 52 45 39;
+    --night-600: 67 56 48;
+    --night-500: 123 111 102;
+    --ink: 250 250 249;
+    --moon: 231 228 221;
+    --moon-soft: 190 182 174;
+    --moon-dim: 160 150 141;
+    --accent: 250 250 249;
+    --accent-hover: 231 228 221;
+    --on-accent: 8 5 3;
+    --ok: 0 186 135;
+    --ok-bright: 0 186 135;
+    --ok-soft: 0 186 135;
+    --warn: 239 168 49;
+    --warn-bright: 239 168 49;
+    --warn-soft: 239 168 49;
+    --bad: 255 92 92;
+    --bad-soft: 255 92 92;
+    --panel: 18 14 11;
+    --on-panel: 250 250 249;
+    color-scheme: dark;
   }
   html,
   body {
-    @apply m-0 bg-night-950 text-moon antialiased;
+    @apply m-0 bg-night-950 font-sans text-moon antialiased;
   }
   body {
     width: 360px;
     height: 600px;
     overflow: hidden;
     font-size: 14px;
+    font-feature-settings: 'tnum' 0;
+    /* An app, not a page: no text caret or selection on labels; only fields and data blocks are selectable. */
+    cursor: default;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable='true'],
+  pre,
+  .select-text {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  input,
+  textarea {
+    cursor: text;
+  }
+  a[href],
+  label:has(input[type='checkbox']) {
+    cursor: pointer;
   }
   #root {
     @apply h-full;
   }
   ::selection {
-    @apply bg-accent/40;
+    @apply bg-ink text-paper;
   }
   input,
   textarea,
-  select {
+  select,
+  button {
     @apply font-sans;
   }
   :focus-visible {
-    @apply outline-none ring-2 ring-accent/70 ring-offset-2 ring-offset-night-950;
+    @apply outline-none ring-2 ring-ink/70 ring-offset-2 ring-offset-night-950;
+  }
+  /* Line icons at 1.5px, never filled. */
+  svg.lucide {
+    stroke-width: 1.5;
   }
 }
 
 @layer components {
   .scroll-area {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.night.600') transparent;
+    scrollbar-color: rgb(var(--night-700)) transparent;
   }
   .field {
-    @apply w-full rounded-xl border border-night-700 bg-night-900 px-3.5 py-2.5 text-[13px] text-moon placeholder:text-moon-dim/70 transition focus:border-accent/70 focus:outline-none focus:ring-2 focus:ring-accent/30;
+    @apply w-full rounded-[4px] border border-hair-strong bg-night-900 px-3.5 py-2.5 text-[13px] text-ink placeholder:text-moon-dim transition focus:border-ink focus:outline-none;
+  }
+  /* Soft state backgrounds: tinted in light, low-alpha in dark (soft tokens equal the bright color there). */
+  .tone-ok { @apply border-ok/25 bg-ok-soft text-ok dark:bg-ok/10; }
+  .tone-warn { @apply border-warn/25 bg-warn-soft text-warn dark:bg-warn/10; }
+  .tone-bad { @apply border-bad/25 bg-bad-soft text-bad dark:bg-bad/10; }
+  /* Site textures: vertical grid lines and the −45° hatch. */
+  .bg-grid {
+    background-image: linear-gradient(to right, rgb(var(--ink) / 0.05) 1px, transparent 1px);
+    background-size: 60px 100%;
+  }
+  .bg-hatch {
+    background-image: repeating-linear-gradient(-45deg, transparent 0 14px, rgb(var(--on-panel) / 0.07) 14px 15px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-meteor-effect,
-  .animate-twinkle {
-    animation: none !important;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

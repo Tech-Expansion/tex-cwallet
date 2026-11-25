@@ -11,6 +11,9 @@
     "e2e": "node --experimental-strip-types --no-warnings e2e/e2e.mjs"
   },
   "dependencies": {
+    "@fontsource/instrument-sans": "^5.2.0",
+    "@fontsource/inter": "^5.2.0",
+    "@fontsource/jetbrains-mono": "^5.2.0",
     "@wallet/core": "*",
     "clsx": "^2.1.1",
     "framer-motion": "^12.43.0",

@@ -20,7 +20,7 @@ function PoolCard({ p, current, onPick, busy }: { p: Pool; current?: boolean; on
   return (
     <Card className="space-y-1.5 p-3" data-testid="pool">
       <div className="flex items-center gap-2">
-        <span className="rounded-md bg-accent/15 px-1.5 text-[12px] font-semibold text-accent">{p.ticker ?? "—"}</span>
+        <span className="border border-hair px-1.5 font-mono text-[11.5px] text-ink">{p.ticker ?? "—"}</span>
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{p.name ?? shorten(p.poolId, 10)}</span>
         {p.retiring && <span className="text-[10.5px] text-warn">{t("stake.retiring")}</span>}
       </div>

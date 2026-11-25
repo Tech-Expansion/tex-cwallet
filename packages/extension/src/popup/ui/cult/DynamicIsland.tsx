@@ -1,13 +1,11 @@
-// Cult UI — Dynamic Island (https://www.cult-ui.com/docs/components/dynamic-island).
-// Điều chỉnh cho popup 360px: chỉ giữ các cỡ cần dùng (compact = đang xử lý, long = kết quả), cùng lò xo
-// stiffness 400 / damping 30 như bản gốc; nội dung do store thông báo của ví điều khiển.
+// Status pill at the top of the popup (busy / result). Ink pill with paper text, the site's "status pill" shape.
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
-const SPRING = { type: 'spring' as const, stiffness: 400, damping: 30 };
+const SPRING = { type: 'spring' as const, stiffness: 420, damping: 34 };
 const SIZES = {
-  compact: { width: 220, height: 36, borderRadius: 22 },
-  long: { width: 336, height: 72, borderRadius: 28 },
+  compact: { width: 220, height: 36 },
+  long: { width: 336, height: 64 },
 } as const;
 export type IslandSize = keyof typeof SIZES;
 
@@ -21,19 +19,19 @@ export function DynamicIsland({ size, open, children, testId }: { size: IslandSi
             data-testid={testId}
             role="status"
             aria-live="polite"
-            initial={{ width: 36, height: 36, borderRadius: 22, opacity: 0, y: -12 }}
+            initial={{ width: 36, height: 36, opacity: 0, y: -8 }}
             animate={{ ...SIZES[size], opacity: 1, y: 0 }}
-            exit={{ width: 36, height: 36, opacity: 0, y: -12 }}
+            exit={{ width: 36, height: 36, opacity: 0, y: -8 }}
             transition={SPRING}
-            className="pointer-events-auto overflow-hidden bg-black text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)] ring-1 ring-white/10"
+            className="pointer-events-auto overflow-hidden rounded-full bg-[rgb(var(--panel))] text-[rgb(var(--on-panel))] ring-1 ring-[rgb(var(--on-panel)/0.12)]"
           >
             <AnimatePresence mode="wait">
               <motion.div
                 key={size}
-                initial={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)', transition: { delay: 0.08 } }}
-                exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-                className="flex h-full w-full items-center gap-2.5 px-3.5"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1, transition: { delay: 0.08 } }}
+                exit={{ opacity: 0 }}
+                className="flex h-full w-full items-center gap-2.5 px-4"
               >
                 {children}
               </motion.div>

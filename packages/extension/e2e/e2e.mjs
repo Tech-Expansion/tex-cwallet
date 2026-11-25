@@ -30,6 +30,9 @@ try {
   const errors = [];
   popup.on("pageerror", (e) => errors.push(e.message));
   await popup.goto(`chrome-extension://${id}/popup.html`);
+  // The UI defaults to English; this test drives the Vietnamese labels.
+  await popup.evaluate(() => localStorage.setItem("prefs", JSON.stringify({ lang: "vi", theme: "system" })));
+  await popup.reload();
 
   const shot = async (page, name) => { if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/${name}.png` }); };
   await popup.setViewportSize({ width: 360, height: 600 });

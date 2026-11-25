@@ -52,18 +52,18 @@ function WithNav({ route, go, children }: { route: string; go: (r: string) => vo
   return (
     <div className="flex h-full flex-col">
       <div className="min-h-0 flex-1">{children}</div>
-      <nav className="grid grid-cols-4 border-t border-night-800 bg-night-950/95 px-2 pb-2 pt-1.5 backdrop-blur">
+      <nav className="grid grid-cols-4 border-t border-hair bg-night-950 px-2 pb-2">
         {NAV.map(({ route: r, label, icon: Icon }) => {
           const active = route === r;
           return (
             <button key={r} onClick={() => go(r)} aria-current={active ? "page" : undefined} aria-label={`Tab ${t(label)}`}
-              className={cx("relative flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium transition-colors", active ? "text-ink" : "text-moon-dim hover:text-moon")}>
-              {active && <motion.span layoutId="nav-active" transition={{ type: "spring", bounce: 0.25, duration: 0.5 }} className="absolute inset-0 rounded-xl bg-accent/10 ring-1 ring-accent/25" />}
-              <Icon size={19} className={cx("relative", active && "text-accent")} />
+              className={cx("relative flex flex-col items-center gap-0.5 pb-1 pt-2.5 text-[11px] transition-colors", active ? "text-ink" : "text-moon-dim hover:text-ink")}>
+              {active && <motion.span layoutId="nav-active" transition={{ type: "spring", bounce: 0.15, duration: 0.4 }} className="absolute inset-x-3 top-0 h-[2px] bg-ink" />}
+              <Icon size={19} className="relative" />
               <span className="relative">{t(label)}</span>
               {r === "/multisig" && pending > 0 && (
                 <span data-testid="ms-badge" aria-label={t("ms2.pendingBadge", { n: String(pending) })}
-                  className="absolute right-[22%] top-0.5 grid min-w-[16px] place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-white">{pending}</span>
+                  className="absolute right-[22%] top-1.5 grid min-w-[16px] place-items-center rounded-full bg-warn-bright px-1 font-mono text-[10px] leading-4 text-[#080503]">{pending}</span>
               )}
             </button>
           );
@@ -94,7 +94,7 @@ function Unlocked({ st, refresh, route, go }: { st: AppState; refresh: () => voi
 function Routes() {
   const { state: st, error, refresh } = useStatus();
   const [route, go] = useHashRoute();
-  if (error) return <div className="p-4 text-bad" role="alert">{error}</div>;
+  if (error) return <div className="tone-bad m-4 border p-3 text-[12px]" role="alert">{error}</div>;
   if (!st) return <div className="grid h-full place-items-center"><Spinner /></div>;
 
   const approve = route.match(/^\/approve\/([\w-]+)$/);

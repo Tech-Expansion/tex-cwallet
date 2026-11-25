@@ -43,7 +43,7 @@ export function Nfts({ st, go }: { st: AppState; go: (r: string) => void }) {
             <ul className="grid grid-cols-2 gap-2.5" data-testid="nft-grid">
               {items.map((n) => (
                 <li key={n.unit}>
-                  <button onClick={() => setOpen(n)} className="w-full overflow-hidden rounded-xl border border-night-800 text-left transition hover:border-accent/50" data-testid="nft-card">
+                  <button onClick={() => setOpen(n)} className="w-full overflow-hidden border border-hair text-left transition hover:border-accent/50" data-testid="nft-card">
                     <NftImage item={n} className="aspect-square w-full" />
                     <div className="truncate px-2 py-1.5 text-[12px] text-ink">{n.name}</div>
                   </button>
@@ -55,13 +55,13 @@ export function Nfts({ st, go }: { st: AppState; go: (r: string) => void }) {
         </div>
       </Screen>
       {open && (
-        <div className="fixed inset-0 z-40 flex flex-col justify-end bg-black/50 backdrop-blur-[2px] animate-fade-up" role="dialog" aria-modal="true" aria-label={open.name}>
-          <div className="max-h-[92%] space-y-3 overflow-y-auto rounded-t-3xl border-t border-night-700 bg-night-950 p-4 shadow-card" data-testid="nft-detail">
+        <div className="fixed inset-0 z-40 flex flex-col justify-end bg-[rgb(8_5_3/0.45)] animate-fade-up" role="dialog" aria-modal="true" aria-label={open.name}>
+          <div className="max-h-[92%] space-y-3 overflow-y-auto border-t border-hair bg-night-950 p-4" data-testid="nft-detail">
             <div className="flex items-center gap-2">
               <h2 className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{open.name}</h2>
               <IconButton label={t("common.close")} onClick={() => setOpen(undefined)}><X size={16} /></IconButton>
             </div>
-            <NftImage item={open} className="mx-auto aspect-square w-full max-w-[280px] rounded-2xl" />
+            <NftImage item={open} className="mx-auto aspect-square w-full max-w-[280px]" />
             {open.description && <p className="whitespace-pre-wrap break-words text-[12.5px] text-moon">{open.description}</p>}
             <Card className="space-y-1 p-3 text-[11.5px]">
               <Row k={t("nft.policy")} v={<span className="break-all font-mono">{open.policyId}</span>} />
@@ -74,7 +74,7 @@ export function Nfts({ st, go }: { st: AppState; go: (r: string) => void }) {
                 <SectionLabel>{t("nft.attributes")}</SectionLabel>
                 <div className="grid grid-cols-2 gap-1.5">
                   {open.attributes.map((a) => (
-                    <div key={a.key} className="rounded-lg border border-night-800 px-2 py-1.5"><div className="truncate text-[10.5px] uppercase text-moon-dim">{a.key}</div><div className="break-words text-[12px] text-ink">{a.value}</div></div>
+                    <div key={a.key} className="border border-hair px-2 py-1.5"><div className="truncate font-mono text-[10px] text-moon-dim">{a.key}</div><div className="break-words text-[12px] text-ink">{a.value}</div></div>
                   ))}
                 </div>
               </div>
