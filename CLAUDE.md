@@ -17,7 +17,7 @@ Run from the repo root (npm workspaces; Node 22, npm 10+).
 | `npm test` | Vitest unit tests for `@wallet/core` and `@wallet/extension` (no network) |
 | `npm test -w @wallet/core -- send` | One test file (any part of the file name); same with `-w @wallet/extension` |
 | `npm run build` | Extension into `packages/extension/dist` (load unpacked in `chrome://extensions`) |
-| `npm run dev -w @wallet/extension` | `vite build --watch` (main target only; see build notes below) |
+| `npm run dev -w @wallet/extension` | Build content/provider once, then watch the main target (see build notes below) |
 | `npm run e2e` | Playwright-core e2e of the built extension; needs `npm run build` first and `CHROME_PATH` set to a Chrome/Chromium binary. Hits real Koios preprod |
 | `npm run flow:setup` / `flow:run` / `flow:status` | Real 2-of-2 multisig run on preprod with throwaway wallets in `.flow-preprod/` |
 
@@ -59,7 +59,8 @@ popup (src/popup/*, via rpc() in popup/rpc.ts)
 
 `vite.config.ts` switches on `TARGET`: the default `main` target builds popup + background as ES modules;
 `scripts/postbuild.mjs` then rebuilds with `TARGET=content` and `TARGET=provider` as standalone IIFEs (content
-scripts cannot be modules). `npm run dev` only watches the main target. Node polyfills (Buffer/global/process)
+scripts cannot be modules). `npm run dev` runs `postbuild.mjs` once, then watches only the main target without
+emptying `dist/`; restart it after changing `src/inject/`. Node polyfills (Buffer/global/process)
 are required by Mesh. `public/manifest.json` is copied as-is.
 
 ### Security-critical invariants
